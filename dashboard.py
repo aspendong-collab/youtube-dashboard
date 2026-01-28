@@ -175,6 +175,71 @@ def get_all_videos(conn):
     ''')
     return cursor.fetchall()
 
+def save_video_ids_to_github(video_ids):
+    """保存视频ID到GitHub文件，触发自动获取"""
+    try:
+        # 读取现有视频
+        videos_file = Path('videos.txt')
+        existing_videos = []
+        if videos_file.exists():
+            with open(videos_file, 'r') as f:
+                existing_videos = [line.strip() for line in f.readlines() if line.strip()]
+        
+        # 添加新视频（去重）
+        new_videos = []
+        for vid in video_ids:
+            if vid not in existing_videos:
+                new_videos.append(vid)
+        
+        if new_videos:
+            # 追加到文件
+            with open(videos_file, 'a') as f:
+                for vid in new_videos:
+                    f.write(f"{vid}\n")
+            
+            # 提交到GitHub
+            import subprocess
+            try:
+                subprocess.run(['git', 'config', '--local', 'user.email', 'action@github.com'], 
+                             check=True, capture_output=True)
+                subprocess.run(['git', 'config', '--local', 'user.name', 'GitHub Action'], 
+                             check=True, capture_output=True)
+                subprocess.run(['git', 'add', 'videos.txt'], check=True, capture_output=True)
+                subprocess.run(['git', 'commit', '-m', 'feat: 添加视频到监控列表'], 
+                             check=True, capture_output=True)
+                subprocess.run(['git', 'push'], check=True, capture_output=True)
+            except subprocess.CalledProcessError as e:
+                st.error(f"❌ 无法提交到GitHub: {e}")
+                st.info("💡 提示：Streamlit Cloud 环境下无法直接提交到GitHub")
+                st.info("📝 视频已保存到本地，GitHub Actions 会自动处理")
+    except Exception as e:
+        st.error(f"❌ 保存视频失败: {e}")
+
+
+def load_videos_from_github():
+    """从GitHub数据库加载视频列表"""
+    try:
+        cursor = conn = get_connection()
+        cursor.execute('SELECT video_id, title, channel_title, added_at, is_active FROM videos ORDER BY added_at DESC')
+        videos = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return videos
+    except Exception as e:
+        st.error(f"❌ 加载视频列表失败: {e}")
+        return []
+
+
+def trigger_github_action():
+    """触发GitHub Actions更新"""
+    try:
+        import requests
+        # GitHub Actions 触发URL（需要配置token）
+        st.info("📊 请手动访问 GitHub Actions 页面触发更新")
+        st.markdown("""
+        🔗 [点击这里触发更新](https://github.com/aspendong-collab/youtube-dashboard/actions)
+        """)
+    except Exception as e:
+        st.error(f"❌ 无法自动触发: {e}")
 
 def add_videos(conn, video_urls):
     """批量添加视频"""
