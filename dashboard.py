@@ -57,19 +57,19 @@ st.markdown("""
 
 def get_db_path():
     """获取数据库路径"""
-    # 尝试多个可能的路径
+    # 优先使用 GitHub 仓库的数据库
+    # 检查当前目录是否有从 GitHub 同步的数据库
     possible_paths = [
-        'youtube_dashboard.db',
-        Path('youtube_dashboard.db'),
-        Path(__file__).parent / 'youtube_dashboard.db',
-        Path.cwd() / 'youtube_dashboard.db',
+        Path.cwd() / 'youtube_dashboard.db',  # 当前工作目录
+        Path(__file__).parent / 'youtube_dashboard.db',  # 脚本所在目录
     ]
     
     for path in possible_paths:
         if path and Path(path).exists():
+            st.info(f"📁 使用数据库: {path}")
             return Path(path)
     
-    # 如果都找不到，使用当前目录
+    # 如果都找不到，使用当前目录（会在下次 GitHub Actions 运行时创建）
     return Path('youtube_dashboard.db')
 
 
@@ -353,14 +353,22 @@ def render_video_management(conn):
 
         col_btn1 = st.columns(1)[0]
 
-        with col_btn1:
+        with col1:
             if st.button("➕ 添加视频", type="primary"):
                 if video_urls:
                     urls = [u.strip() for u in video_urls.split('\n') if u.strip()]
                     count = add_videos(conn, urls)
                     if count > 0:
-                        st.success(f"✅ 统计数据库中已有记录...")
-                        st.info(f"✅ 成功添加 {count} 个视频！请手动触发 GitHub Actions 获取数据")
+                        st.success(f"✅ 成功添加 {count} 个视频！")
+                        st.warning("⚠️ 重要：请立即访问 GitHub Actions 手动触发更新，否则视频数据不会被获取！")
+                        st.markdown("""
+                        **下一步操作：**
+                        1. 访问：https://github.com/aspendong-collab/youtube-dashboard/actions
+                        2. 点击 "YouTube 数据自动更新"
+                        3. 点击 "Run workflow"
+                        4. 等待 1-3 分钟
+                        5. 返回此页面并刷新
+                        """)
                         st.rerun()
                     else:
                         st.warning("⚠️ 没有添加新视频（可能已存在或格式错误）")
