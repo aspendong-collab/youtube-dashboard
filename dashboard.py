@@ -57,19 +57,8 @@ st.markdown("""
 
 def get_db_path():
     """获取数据库路径"""
-    # 优先使用 GitHub 仓库的数据库
-    # 检查当前目录是否有从 GitHub 同步的数据库
-    possible_paths = [
-        Path.cwd() / 'youtube_dashboard.db',  # 当前工作目录
-        Path(__file__).parent / 'youtube_dashboard.db',  # 脚本所在目录
-    ]
-    
-    for path in possible_paths:
-        if path and Path(path).exists():
-            st.info(f"📁 使用数据库: {path}")
-            return Path(path)
-    
-    # 如果都找不到，使用当前目录（会在下次 GitHub Actions 运行时创建）
+    # 统一使用当前工作目录的数据库
+    # GitHub Actions 和 Streamlit Cloud 都会在各自的目录运行
     return Path('youtube_dashboard.db')
 
 
