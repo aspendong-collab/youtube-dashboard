@@ -480,18 +480,32 @@ def main():
     conn = get_connection()
     print(f"✅ 数据库已连接")
 
-    # 获取所有活跃视频
+      # 获取所有活跃视频
     cursor = conn.cursor()
-    cursor.execute('SELECT video_id FROM videos WHERE is_active = 1')
-    videos = cursor.fetchall()
-
-    if not videos:
-        print("⚠️ 暂无活跃视频，请先在 dashboard 中添加")
-        conn.close()
-        return
-
-    print(f"✅ 找到 {len(videos)} 个活跃视频")
-    print()
+    
+    # 优先从 videos.txt 读取
+    videos_file = Path('videos.txt')
+    if videos_file.exists():
+        with open(videos_file, 'r') as f:
+            video_ids = [line.strip() for line in f.readlines() 
+                        if line.strip() and not line.strip().startswith('#')]
+        
+        # 确保所有视频都在数据库中
+        for video_id in video_ids:
+            cursor.execute('''
+                INSERT OR IGNORE INTO videos (video_id, title, channel_title, is_active)
+                VALUES (?, ?, ?, 1)
+            ''', (video_id, '待更新', ''))
+        
+        conn.commit()
+        
+        # 读取数据库中的视频
+        cursor.execute('SELECT video_id FROM videos WHERE is_active = 1')
+        videos = cursor.fetchall()
+    else:
+        # 从数据库读取
+        cursor.execute('SELECT video_id FROM videos WHERE is_active = 1')
+        videos = cursor.fetchall()
 
     # 更新每个视频的数据
     update_time = datetime.now()
