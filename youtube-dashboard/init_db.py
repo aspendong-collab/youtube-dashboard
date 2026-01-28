@@ -1,0 +1,1 @@
+cat /workspace/projects/youtube_dashboard/init_db.py
