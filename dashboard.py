@@ -341,7 +341,7 @@ def render_video_management(conn):
         st.subheader("添加新视频")
         st.markdown("""
         <div class="success-box">
-            💡 <b>提示：</b>每行输入一个 YouTube 视频地址，支持完整 URL 或直接输入 video_id
+            💡 <b>提示：</b>每行输入一个 YouTube 视频地址，添加后会自动获取视频标题和数据
         </div>
         """, unsafe_allow_html=True)
 
@@ -353,25 +353,31 @@ def render_video_management(conn):
 
         col_btn1 = st.columns(1)[0]
 
-        with col1:
+        with col_btn1:
             if st.button("➕ 添加视频", type="primary"):
                 if video_urls:
-                    urls = [u.strip() for u in video_urls.split('\n') if u.strip()]
-                    count = add_videos(conn, urls)
-                    if count > 0:
-                        st.success(f"✅ 成功添加 {count} 个视频！")
-                        st.warning("⚠️ 重要：请立即访问 GitHub Actions 手动触发更新，否则视频数据不会被获取！")
+                    # 提取所有视频ID
+                    video_ids = []
+                    for url in video_urls.split('\n'):
+                        url = url.strip()
+                        if not url:
+                            continue
+                        video_id = extract_video_id(url)
+                        if video_id:
+                            video_ids.append(video_id)
+                    
+                    if video_ids:
+                        # 保存到 GitHub 文件
+                        save_video_ids_to_github(video_ids)
+                        
+                        st.success(f"✅ 成功添加 {len(video_ids)} 个视频！")
+                        st.info("⏰ 数据正在获取中，约 1-3 分钟后请刷新页面查看")
                         st.markdown("""
-                        **下一步操作：**
-                        1. 访问：https://github.com/aspendong-collab/youtube-dashboard/actions
-                        2. 点击 "YouTube 数据自动更新"
-                        3. 点击 "Run workflow"
-                        4. 等待 1-3 分钟
-                        5. 返回此页面并刷新
+                        **查看获取进度：**
+                        📊 [GitHub Actions](https://github.com/aspendong-collab/youtube-dashboard/actions)
                         """)
-                        st.rerun()
                     else:
-                        st.warning("⚠️ 没有添加新视频（可能已存在或格式错误）")
+                        st.warning("⚠️ 没有有效的视频地址")
                 else:
                     st.warning("⚠️ 请输入视频地址")
 
@@ -381,25 +387,41 @@ def render_video_management(conn):
         **添加视频步骤：**
         1. ✅ 在左侧输入框粘贴视频地址（每行一个）
         2. ✅ 点击"添加视频"按钮
-        3. ✅ 查看下方的视频列表
-        4. ✅ 访问 GitHub Actions 手动触发更新
-        5. ✅ 等待 1-3 分钟后刷新页面查看数据
-
-        **数据更新：**
-        - ⏰ 每日自动更新：9:00, 12:00, 18:00（北京时间）
-        - 🔄 手动触发：访问 GitHub Actions 页面点击 "Run workflow"
+        3. ✅ 自动触发数据获取
+        4. ✅ 等待 1-3 分钟
+        5. ✅ 刷新页面查看数据
 
         **支持格式：**
         - `https://www.youtube.com/watch?v=xxx`
         - `https://youtu.be/xxx`
         - 直接输入 `xxx`（11位ID）
+
+        **数据更新：**
+        - ⏰ 每日自动：9:00, 12:00, 18:00（北京时间）
+        - 🔄 手动触发：点击下方按钮
         """)
+
+    st.divider()
+
+    # 手动更新按钮
+    st.subheader("手动更新数据")
+    col_update = st.columns(1)[0]
+    with col_update:
+        if st.button("🔄 立即更新所有视频数据"):
+            st.info("⏰ 正在触发 GitHub Actions 获取数据...")
+            trigger_github_action()
+            st.success("✅ 已触发更新！请等待 1-3 分钟后刷新页面")
+            st.markdown("""
+            **查看获取进度：**
+            📊 [GitHub Actions](https://github.com/aspendong-collab/youtube-dashboard/actions)
+            """)
 
     st.divider()
 
     st.subheader("📋 监控视频列表")
 
-    videos = get_all_videos(conn)
+    # 从 GitHub 文件读取视频列表
+    videos = load_videos_from_github()
 
     if not videos:
         st.info("📭 暂无监控视频，请添加视频地址")
@@ -410,10 +432,10 @@ def render_video_management(conn):
     for v in videos:
         video_data.append({
             'Video ID': v['video_id'],
-            '标题': v['title'] or '待更新',
-            '频道': v['channel_title'] or '-',
-            '添加时间': v['added_at'],
-            '状态': '✅ 活跃' if v['is_active'] else '❌ 停用'
+            '标题': v.get('title', '待更新'),
+            '频道': v.get('channel_title', '-'),
+            '添加时间': v.get('added_at', '-'),
+            '状态': '✅ 活跃' if v.get('is_active', 1) else '❌ 停用'
         })
 
     df_videos = pd.DataFrame(video_data)
@@ -426,13 +448,12 @@ def render_video_management(conn):
             'Video ID': st.column_config.TextColumn('Video ID', width='small'),
             '标题': st.column_config.TextColumn('标题'),
             '频道': st.column_config.TextColumn('频道', width='medium'),
-            '添加时间': st.column_config.DatetimeColumn('添加时间', format='YYYY-MM-DD HH:mm'),
+            '添加时间': st.column_config.TextColumn('添加时间', width='medium'),
             '状态': st.column_config.TextColumn('状态', width='small')
         }
     )
 
     st.markdown(f"📊 共有 **{len(videos)}** 个视频正在监控")
-
 
 def render_overall_dashboard(conn):
     """渲染整体数据看板"""
