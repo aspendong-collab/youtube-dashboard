@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from collections import Counter
 import os
+import tempfile
 
 # 配置页面
 st.set_page_config(
@@ -54,21 +55,44 @@ st.markdown("""
 
 # ==================== 数据库操作函数 ====================
 
+def get_db_path():
+    """获取数据库路径"""
+    # 尝试多个可能的路径
+    possible_paths = [
+        'youtube_dashboard.db',
+        Path('youtube_dashboard.db'),
+        Path(__file__).parent / 'youtube_dashboard.db',
+        Path.cwd() / 'youtube_dashboard.db',
+    ]
+    
+    for path in possible_paths:
+        if path and Path(path).exists():
+            return Path(path)
+    
+    # 如果都找不到，使用当前目录
+    return Path('youtube_dashboard.db')
+
+
 def get_connection():
     """获取数据库连接"""
-    db_path = Path('youtube_dashboard.db')
+    db_path = get_db_path()
     
-    # 如果数据库不存在，初始化
+    # 初始化数据库（如果不存在）
     if not db_path.exists():
-        init_database()
+        init_database(str(db_path))
     
-    conn = sqlite3.connect('youtube_dashboard.db')
+    conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     return conn
 
-def init_database():
+
+def init_database(db_path=None):
     """初始化数据库"""
-    conn = sqlite3.connect('youtube_dashboard.db')
+    if db_path is None:
+        conn = sqlite3.connect('youtube_dashboard.db')
+    else:
+        conn = sqlite3.connect(db_path)
+    
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -335,7 +359,8 @@ def render_video_management(conn):
                     urls = [u.strip() for u in video_urls.split('\n') if u.strip()]
                     count = add_videos(conn, urls)
                     if count > 0:
-                        st.success(f"✅ 成功添加 {count} 个视频！")
+                        st.success(f"✅ 统计数据库中已有记录...")
+                        st.info(f"✅ 成功添加 {count} 个视频！请手动触发 GitHub Actions 获取数据")
                         st.rerun()
                     else:
                         st.warning("⚠️ 没有添加新视频（可能已存在或格式错误）")
@@ -349,13 +374,12 @@ def render_video_management(conn):
         1. ✅ 在左侧输入框粘贴视频地址（每行一个）
         2. ✅ 点击"添加视频"按钮
         3. ✅ 查看下方的视频列表
-        4. ✅ 定时脚本会自动获取数据
+        4. ✅ 访问 GitHub Actions 手动触发更新
+        5. ✅ 等待 1-3 分钟后刷新页面查看数据
 
-        **更新数据步骤：**
-        1. ✅ 访问 GitHub Actions 页面手动触发
-        2. ✅ 等待 1-3 分钟数据获取完成
-        3. ✅ 刷新本页面查看更新后的数据
-        4. ✅ 或者等待每日自动更新（9:00, 12:00, 18:00）
+        **数据更新：**
+        - ⏰ 每日自动更新：9:00, 12:00, 18:00（北京时间）
+        - 🔄 手动触发：访问 GitHub Actions 页面点击 "Run workflow"
 
         **支持格式：**
         - `https://www.youtube.com/watch?v=xxx`
@@ -410,7 +434,8 @@ def render_overall_dashboard(conn):
     stats = get_overall_stats(conn)
 
     if not stats or stats['total_videos'] == 0:
-        st.warning("⚠️ 暂无数据，请先添加视频并等待定时脚本更新数据")
+        st.warning("⚠️ 暂无数据，请先添加视频并等待 GitHub Actions 更新数据")
+        st.info("💡 提示：添加视频后，访问 GitHub Actions 手动触发更新，等待 1-3 分钟后刷新页面")
         return
 
     # KPI 卡片
@@ -448,6 +473,7 @@ def render_overall_dashboard(conn):
 
     if trend_df.empty:
         st.warning("⚠️ 暂无历史数据")
+        st.info("💡 提示：新添加的视频会在首次数据更新时自动模拟 30 天的历史数据")
         return
 
     # 播放量趋势
@@ -521,6 +547,7 @@ def render_video_detail_dashboard(conn):
 
     if not stats:
         st.warning(f"⚠️ 视频 {video_id} 暂无数据")
+        st.info("💡 提示：新添加的视频会在首次数据更新时自动模拟 30 天的历史数据")
         return
 
     # 视频信息
@@ -826,9 +853,10 @@ def main():
         st.markdown("""
         **使用说明：**
         1. 在"视频管理"添加视频地址
-        2. 添加后访问 GitHub Actions 手动触发更新
-        3. 查看"整体看板"和"单个视频"
-        4. 关注"爆款提醒"通知
+        2. 访问 GitHub Actions 手动触发更新
+        3. 等待 1-3 分钟后刷新页面
+        4. 查看"整体看板"和"单个视频"
+        5. 关注"爆款提醒"通知
         """)
 
     # 根据选择渲染页面
