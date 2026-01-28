@@ -2,11 +2,14 @@
 """
 YouTube 数据更新脚本
 从 YouTube API 获取视频数据并存储到数据库
+支持历史数据模拟
 """
 
 import requests
 import sqlite3
 from datetime import datetime, timedelta
+from pathlib import Path
+from math import sqrt
 import os
 
 
@@ -84,11 +87,103 @@ def fetch_video_comments(api_key, video_id, max_comments=100):
         return []
 
 
+# ==================== 历史数据模拟 ====================
+
+def simulate_historical_data(conn, video_data, days=30):
+    """
+    模拟历史数据
+    基于当前播放量和发布时间，使用合理的增长模型模拟过去30天的数据
+    """
+    # 解析发布时间
+    published_at = datetime.fromisoformat(video_data['published_at'].replace('Z', '+00:00'))
+    
+    # 计算视频发布后的天数
+    days_since_publish = (datetime.now(published_at.tzinfo) - published_at).days
+    
+    # 如果视频刚发布（< 7天），只填充实际天数
+    if days_since_publish < days:
+        days = max(days_since_publish, 1)
+    
+    print(f"  📊 模拟历史数据（{days} 天）...")
+    
+    # 获取当前数据
+    current_views = video_data['view_count']
+    current_likes = video_data['like_count']
+    current_comments = video_data['comment_count']
+    
+    # 计算互动率
+    if current_views > 0:
+        current_engagement = ((current_likes + current_comments) / current_views) * 100
+    else:
+        current_engagement = 0
+    
+    # 生成历史数据
+    cursor = conn.cursor()
+    
+    for i in range(days, 0, -1):
+        date = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
+        
+        # 检查该日期是否已有数据
+        cursor.execute('''
+            SELECT id FROM video_stats
+            WHERE video_id = ? AND date = ?
+        ''', (video_data['video_id'], date))
+        
+        if cursor.fetchone():
+            continue  # 已有数据，跳过
+        
+        # 使用 S 型增长模型模拟
+        # 进度比例（0 到 1）
+        progress = i / days
+        
+        # S 型曲线函数：1 / (1 + e^(-k*(x-x0)))
+        # 将进度映射到 S 型曲线
+        s_curve = 1 / (1 + 2.71828 ** (-5 * (progress - 0.5)))
+        
+        # 模拟当天的数据
+        simulated_views = int(current_views * s_curve)
+        simulated_views = max(simulated_views, int(current_views * 0.1))  # 最少是当前的10%
+        
+        # 点赞数和评论数也按类似比例模拟
+        simulated_likes = int(current_likes * s_curve)
+        simulated_likes = max(simulated_likes, 1)  # 至少 1 个
+        
+        simulated_comments = int(current_comments * s_curve)
+        simulated_comments = max(simulated_comments, 0)
+        
+        # 计算互动率
+        if simulated_views > 0:
+            simulated_engagement = ((simulated_likes + simulated_comments) / simulated_views) * 100
+        else:
+            simulated_engagement = current_engagement
+        
+        # 插入模拟数据
+        cursor.execute('''
+            INSERT INTO video_stats (video_id, date, view_count, like_count, comment_count, engagement_rate, fetch_time)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            video_data['video_id'],
+            date,
+            simulated_views,
+            simulated_likes,
+            simulated_comments,
+            simulated_engagement,
+            datetime.now()
+        ))
+    
+    conn.commit()
+    print(f"  ✅ 模拟了 {days} 天的历史数据")
+
+
 # ==================== 数据库操作 ====================
 
-def init_database():
+def init_database(db_path=None):
     """初始化数据库"""
-    conn = sqlite3.connect('youtube_dashboard.db')
+    if db_path is None:
+        conn = sqlite3.connect('youtube_dashboard.db')
+    else:
+        conn = sqlite3.connect(db_path)
+    
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -143,11 +238,17 @@ def init_database():
 
 def get_connection():
     """获取数据库连接"""
-    conn = sqlite3.connect('youtube_dashboard.db')
-    conn.row_factory = sqlite3.Row
+    db_path = Path('youtube_dashboard.db')
     
     # 初始化数据库（如果表不存在）
-    init_database()
+    if not db_path.exists():
+        init_database(str(db_path))
+    
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    
+    # 再次初始化（确保表存在）
+    init_database(str(db_path))
     
     return conn
 
@@ -165,7 +266,7 @@ def save_comments_to_db(cursor, video_id, comments):
         ''', (video_id, comment, datetime.now()))
 
 
-def update_video_data(conn, video_data, api_key, update_time):
+def update_video_data(conn, video_data, api_key, update_time, simulate_history=False):
     """更新视频数据到数据库"""
     cursor = conn.cursor()
 
@@ -203,6 +304,19 @@ def update_video_data(conn, video_data, api_key, update_time):
 
     # 计算今日增长
     today_growth = video_data['view_count'] - yesterday_views
+
+    # 如果是新视频（没有历史数据），模拟历史数据
+    if simulate_history:
+        cursor.execute('''
+            SELECT COUNT(*) as count FROM video_stats
+            WHERE video_id = ?
+        ''', (video_data['video_id'],))
+        
+        record_count = cursor.fetchone()['count']
+        
+        if record_count == 0:
+            # 第一次获取该视频，模拟历史数据
+            simulate_historical_data(conn, video_data, days=30)
 
     if existing:
         # 更新今天的数据
@@ -392,8 +506,8 @@ def main():
             # 获取视频信息
             video_data = fetch_video_info(api_key, video_id)
 
-            # 更新数据库（传入 api_key 和 update_time）
-            engagement_rate, comments = update_video_data(conn, video_data, api_key, update_time)
+            # 更新数据库（传入 simulate_history=True）
+            engagement_rate, comments = update_video_data(conn, video_data, api_key, update_time, simulate_history=True)
 
             # 检查数据异常
             check_data_anomaly(cursor, video_data)
