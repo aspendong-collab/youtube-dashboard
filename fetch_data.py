@@ -86,10 +86,69 @@ def fetch_video_comments(api_key, video_id, max_comments=100):
 
 # ==================== 数据库操作 ====================
 
+def init_database():
+    """初始化数据库"""
+    conn = sqlite3.connect('youtube_dashboard.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS videos (
+            video_id TEXT PRIMARY KEY,
+            title TEXT,
+            channel_title TEXT,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            is_active INTEGER DEFAULT 1
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS video_stats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            video_id TEXT,
+            date DATE,
+            view_count INTEGER DEFAULT 0,
+            like_count INTEGER DEFAULT 0,
+            comment_count INTEGER DEFAULT 0,
+            engagement_rate REAL DEFAULT 0,
+            fetch_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (video_id) REFERENCES videos(video_id)
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS video_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            video_id TEXT,
+            comment_text TEXT,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (video_id) REFERENCES videos(video_id)
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            video_id TEXT,
+            alert_type TEXT,
+            current_value INTEGER,
+            message TEXT,
+            sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (video_id) REFERENCES videos(video_id)
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+
+
 def get_connection():
     """获取数据库连接"""
     conn = sqlite3.connect('youtube_dashboard.db')
     conn.row_factory = sqlite3.Row
+    
+    # 初始化数据库（如果表不存在）
+    init_database()
+    
     return conn
 
 
