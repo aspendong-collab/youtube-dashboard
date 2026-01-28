@@ -15,7 +15,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from collections import Counter
 import os
-import requests
 
 # 配置页面
 st.set_page_config(
@@ -276,102 +275,6 @@ def get_alerts(conn, days=7):
     return df
 
 
-def fetch_video_data(conn, api_key):
-    """立即获取所有视频的数据"""
-    cursor = conn.cursor()
-    cursor.execute('SELECT video_id FROM videos WHERE is_active = 1')
-    videos = cursor.fetchall()
-
-    if not videos:
-        st.warning("⚠️ 暂无活跃视频")
-        return 0, 0
-
-    success_count = 0
-    error_count = 0
-
-    progress = st.progress(0)
-    status_text = st.empty()
-
-    for i, video in enumerate(videos, 1):
-        video_id = video['video_id']
-        status_text.text(f"正在获取视频 {i}/{len(videos)} 的数据...")
-
-        try:
-            url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics&id={video_id}&key={api_key}"
-            response = requests.get(url, timeout=30)
-            response.raise_for_status()
-            data = response.json()
-
-            if 'items' not in data or len(data['items']) == 0:
-                error_count += 1
-                progress.progress(i / len(videos))
-                continue
-
-            video_data = data['items'][0]
-            snippet = video_data.get('snippet', {})
-            statistics = video_data.get('statistics', {})
-
-            title = snippet.get('title', '未知')
-            channel_title = snippet.get('channelTitle', '未知')
-            view_count = int(statistics.get('viewCount', 0))
-            like_count = int(statistics.get('likeCount', 0))
-            comment_count = int(statistics.get('commentCount', 0))
-
-            # 更新视频信息
-            cursor.execute('''
-                UPDATE videos
-                SET title = ?, channel_title = ?
-                WHERE video_id = ?
-            ''', (title, channel_title, video_id))
-
-            # 检查今天是否已有数据
-            today = datetime.now().strftime('%Y-%m-%d')
-            cursor.execute('''
-                SELECT id FROM video_stats
-                WHERE video_id = ? AND date = ?
-            ''', (video_id, today))
-
-            existing = cursor.fetchone()
-
-            # 计算互动率
-            if view_count > 0:
-                engagement_rate = ((like_count + comment_count) / view_count) * 100
-            else:
-                engagement_rate = 0
-
-            if existing:
-                cursor.execute('''
-                    UPDATE video_stats
-                    SET view_count = ?, like_count = ?, comment_count = ?, engagement_rate = ?, fetch_time = ?
-                    WHERE video_id = ? AND date = ?
-                ''', (
-                    view_count, like_count, comment_count, engagement_rate,
-                    datetime.now(), video_id, today
-                ))
-            else:
-                cursor.execute('''
-                    INSERT INTO video_stats (video_id, date, view_count, like_count, comment_count, engagement_rate, fetch_time)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    video_id, today, view_count, like_count, comment_count,
-                    engagement_rate, datetime.now()
-                ))
-
-            conn.commit()
-            success_count += 1
-
-        except Exception as e:
-            error_count += 1
-            continue
-
-        progress.progress(i / len(videos))
-
-    progress.empty()
-    status_text.empty()
-
-    return success_count, error_count
-
-
 def generate_word_cloud(comments):
     """生成词云数据"""
     if not comments:
@@ -424,7 +327,7 @@ def render_video_management(conn):
             placeholder="https://www.youtube.com/watch?v=xxx\nhttps://www.youtube.com/watch?v=yyy"
         )
 
-        col_btn1, col_btn2 = st.columns(2)
+        col_btn1 = st.columns(1)[0]
 
         with col_btn1:
             if st.button("➕ 添加视频", type="primary"):
@@ -439,24 +342,6 @@ def render_video_management(conn):
                 else:
                     st.warning("⚠️ 请输入视频地址")
 
-        with col_btn2:
-            if st.button("🔄 立即更新数据"):
-                api_key = os.getenv('COZE_YOUTUBE_DATA_API_7600312097678868486')
-                if not api_key:
-                    st.error("❌ 未配置 YouTube API Key，请在 Streamlit Cloud Settings 中配置")
-                    st.stop()
-
-                with st.spinner("正在获取数据，请稍候..."):
-                    success_count, error_count = fetch_video_data(conn, api_key)
-
-                    if success_count > 0:
-                        st.success(f"✅ 成功更新 {success_count} 个视频的数据！")
-                        if error_count > 0:
-                            st.warning(f"⚠️ {error_count} 个视频更新失败")
-                        st.rerun()
-                    else:
-                        st.error("❌ 所有视频更新失败，请检查 API Key 或网络连接")
-
     with col2:
         st.subheader("操作指南")
         st.markdown("""
@@ -467,9 +352,10 @@ def render_video_management(conn):
         4. ✅ 定时脚本会自动获取数据
 
         **更新数据步骤：**
-        1. ✅ 点击"立即更新数据"按钮
-        2. ✅ 等待数据获取完成
-        3. ✅ 查看更新后的数据
+        1. ✅ 访问 GitHub Actions 页面手动触发
+        2. ✅ 等待 1-3 分钟数据获取完成
+        3. ✅ 刷新本页面查看更新后的数据
+        4. ✅ 或者等待每日自动更新（9:00, 12:00, 18:00）
 
         **支持格式：**
         - `https://www.youtube.com/watch?v=xxx`
@@ -940,7 +826,7 @@ def main():
         st.markdown("""
         **使用说明：**
         1. 在"视频管理"添加视频地址
-        2. 点击"立即更新数据"获取视频信息
+        2. 添加后访问 GitHub Actions 手动触发更新
         3. 查看"整体看板"和"单个视频"
         4. 关注"爆款提醒"通知
         """)
