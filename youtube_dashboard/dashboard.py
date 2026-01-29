@@ -708,7 +708,6 @@ def render_video_detail_dashboard(conn):
         markers=True,
         template='plotly_white'
     )
-    )
     fig_views.update_layout(
         xaxis_title='日期',
         yaxis_title='播放量',
