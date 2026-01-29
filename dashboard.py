@@ -16,6 +16,7 @@ from pathlib import Path
 from collections import Counter
 import os
 import tempfile
+import requests
 
 # 配置页面
 st.set_page_config(
@@ -51,6 +52,105 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ==================== YouTube API 函数 ====================
+
+def fetch_video_data_direct(video_ids):
+    """直接从 YouTube API 获取视频数据
+    
+    参数:
+        video_ids: 视频ID列表
+    
+    返回:
+        视频数据字典 {video_id: {title, channel_title, view_count, like_count, comment_count}}
+    """
+    # 从 Streamlit Secrets 获取 API Key
+    try:
+        api_key = st.secrets["YOUTUBE_API_KEY"]
+    except KeyError:
+        st.error("❌ 未配置 YouTube API Key")
+        st.info("💡 请在 Streamlit Cloud 的 Settings → Secrets 中添加 YOUTUBE_API_KEY")
+        return None
+    
+    if not video_ids:
+        return {}
+    
+    # 批量获取视频数据（最多50个）
+    video_ids_str = ','.join(video_ids[:50])
+    url = f"https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id={video_ids_str}&key={api_key}"
+    
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if 'items' not in data:
+            st.warning("⚠️ 未找到视频数据，请检查视频ID是否正确")
+            return {}
+        
+        video_data = {}
+        for item in data['items']:
+            video_id = item['id']
+            snippet = item.get('snippet', {})
+            statistics = item.get('statistics', {})
+            
+            video_data[video_id] = {
+                'title': snippet.get('title', '未知标题'),
+                'channel_title': snippet.get('channelTitle', '未知频道'),
+                'view_count': int(statistics.get('viewCount', 0)),
+                'like_count': int(statistics.get('likeCount', 0)),
+                'comment_count': int(statistics.get('commentCount', 0)),
+                'published_at': snippet.get('publishedAt', ''),
+            }
+        
+        return video_data
+        
+    except requests.exceptions.RequestException as e:
+        st.error(f"❌ 获取数据失败: {e}")
+        return None
+    except Exception as e:
+        st.error(f"❌ 解析数据失败: {e}")
+        return None
+
+
+def save_video_stats_direct(conn, video_data):
+    """直接保存视频统计数据到数据库
+    
+    参数:
+        conn: 数据库连接
+        video_data: fetch_video_data_direct() 返回的视频数据
+    """
+    if not video_data:
+        return
+    
+    cursor = conn.cursor()
+    current_date = datetime.now().strftime('%Y-%m-%d')
+    current_time = datetime.now()
+    
+    for video_id, data in video_data.items():
+        # 更新视频基本信息
+        cursor.execute('''
+            INSERT OR REPLACE INTO videos (video_id, title, channel_title, is_active)
+            VALUES (?, ?, ?, 1)
+        ''', (video_id, data['title'], data['channel_title']))
+        
+        # 计算互动率
+        view_count = data['view_count']
+        if view_count > 0:
+            engagement_rate = (data['like_count'] + data['comment_count']) / view_count * 100
+        else:
+            engagement_rate = 0.0
+        
+        # 插入统计数据
+        cursor.execute('''
+            INSERT OR REPLACE INTO video_stats 
+            (video_id, date, view_count, like_count, comment_count, engagement_rate, fetch_time)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (video_id, current_date, view_count, data['like_count'], 
+              data['comment_count'], engagement_rate, current_time))
+    
+    conn.commit()
 
 
 # ==================== 数据库操作函数 ====================
@@ -222,8 +322,47 @@ def trigger_github_action():
     except Exception as e:
         st.error(f"❌ 无法自动触发: {e}")
 
+def add_videos_direct(conn, video_urls):
+    """批量添加视频并实时获取数据
+    
+    参数:
+        conn: 数据库连接
+        video_urls: 视频URL列表
+    
+    返回:
+        成功添加的视频数量
+    """
+    # 提取所有视频ID
+    video_ids = []
+    for url in video_urls:
+        url = url.strip()
+        if not url:
+            continue
+        video_id = extract_video_id(url)
+        if video_id:
+            video_ids.append(video_id)
+    
+    if not video_ids:
+        return 0
+    
+    # 实时获取视频数据
+    st.info("⏳ 正在从 YouTube 获取视频数据...")
+    video_data = fetch_video_data_direct(video_ids)
+    
+    if video_data is None:
+        return 0
+    
+    if not video_data:
+        return 0
+    
+    # 保存到数据库
+    save_video_stats_direct(conn, video_data)
+    
+    return len(video_data)
+
+
 def add_videos(conn, video_urls):
-    """批量添加视频"""
+    """批量添加视频（保留兼容性）"""
     cursor = conn.cursor()
     added_count = 0
 
@@ -425,28 +564,17 @@ def render_video_management(conn):
         with col_btn1:
             if st.button("➕ 添加视频", type="primary"):
                 if video_urls:
-                    # 提取所有视频ID
-                    video_ids = []
-                    for url in video_urls.split('\n'):
-                        url = url.strip()
-                        if not url:
-                            continue
-                        video_id = extract_video_id(url)
-                        if video_id:
-                            video_ids.append(video_id)
+                    # 使用实时获取数据的新函数
+                    urls = video_urls.split('\n')
+                    added_count = add_videos_direct(conn, urls)
                     
-                    if video_ids:
-                        # 保存到 GitHub 文件
-                        save_video_ids_to_github(video_ids)
-                        
-                        st.success(f"✅ 成功添加 {len(video_ids)} 个视频！")
-                        st.info("⏰ 数据正在获取中，约 1-3 分钟后请刷新页面查看")
-                        st.markdown("""
-                        **查看获取进度：**
-                        📊 [GitHub Actions](https://github.com/aspendong-collab/youtube-dashboard/actions)
-                        """)
+                    if added_count > 0:
+                        st.success(f"✅ 成功添加 {added_count} 个视频并获取数据！")
+                        st.info("💡 数据已实时获取，可以立即在\"单个视频\"页面查看")
+                        # 自动刷新页面以显示新数据
+                        st.rerun()
                     else:
-                        st.warning("⚠️ 没有有效的视频地址")
+                        st.warning("⚠️ 没有有效的视频地址或获取数据失败")
                 else:
                     st.warning("⚠️ 请输入视频地址")
 
@@ -456,9 +584,9 @@ def render_video_management(conn):
         **添加视频步骤：**
         1. ✅ 在左侧输入框粘贴视频地址（每行一个）
         2. ✅ 点击"添加视频"按钮
-        3. ✅ 自动触发数据获取
-        4. ✅ 等待 1-3 分钟
-        5. ✅ 刷新页面查看数据
+        3. ✅ **实时获取数据**（1-2秒内完成）
+        4. ✅ 页面自动刷新
+        5. ✅ 立即查看数据分析结果
 
         **支持格式：**
         - `https://www.youtube.com/watch?v=xxx`
@@ -466,8 +594,14 @@ def render_video_management(conn):
         - 直接输入 `xxx`（11位ID）
 
         **数据更新：**
-        - ⏰ 每日自动：9:00, 12:00, 18:00（北京时间）
-        - 🔄 手动触发：点击下方按钮
+        - 🚀 **实时获取**：添加视频时立即获取
+        - ⏰ 定时更新：每日自动 9:00, 12:00, 18:00（北京时间）
+        - 🔄 手动更新：点击下方按钮
+        
+        **注意事项：**
+        - 需要配置 YouTube API Key（Streamlit Secrets）
+        - 免费 API 配额：每日 10,000 单位
+        - 单次获取 1 个视频约消耗 1 单位
         """)
 
     st.divider()
