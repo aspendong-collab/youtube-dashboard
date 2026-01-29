@@ -76,12 +76,32 @@ def init_database():
         cursor.execute("PRAGMA table_info(video_stats)")
         columns = [column[1] for column in cursor.fetchall()]
         
-        if 'recorded_at' not in columns:
+        # 如果存在 fetch_time 列，重命名为 recorded_at（如果需要）
+        if 'fetch_time' in columns and 'recorded_at' not in columns:
             try:
-                cursor.execute("ALTER TABLE video_stats ADD COLUMN recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+                # SQLite 不支持直接重命名列，需要重建表
+                cursor.execute("""
+                    CREATE TABLE video_stats_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        video_id TEXT NOT NULL,
+                        view_count INTEGER,
+                        like_count INTEGER,
+                        comment_count INTEGER,
+                        favorite_count INTEGER,
+                        recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (video_id) REFERENCES videos(video_id)
+                    )
+                """)
+                cursor.execute("""
+                    INSERT INTO video_stats_new (id, video_id, view_count, like_count, comment_count, favorite_count, recorded_at)
+                    SELECT id, video_id, view_count, like_count, comment_count, favorite_count, fetch_time
+                    FROM video_stats
+                """)
+                cursor.execute("DROP TABLE video_stats")
+                cursor.execute("ALTER TABLE video_stats_new RENAME TO video_stats")
                 conn.commit()
             except Exception as e:
-                # 如果添加失败，忽略错误（可能是表已经正确）
+                # 如果重建失败，忽略错误
                 pass
         
         # 创建评论表
@@ -155,15 +175,15 @@ def get_videos() -> List[Tuple[Any, ...]]:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT 
-                video_id, title, channel_title, published_at, 
-                view_count, like_count, comment_count
+                v.video_id, v.title, v.channel_title, v.added_at, 
+                vs.view_count, vs.like_count, vs.comment_count
             FROM videos v
             LEFT JOIN (
                 SELECT video_id, view_count, like_count, comment_count,
-                       ROW_NUMBER() OVER (PARTITION BY video_id ORDER BY recorded_at DESC) as rn
+                       ROW_NUMBER() OVER (PARTITION BY video_id ORDER BY fetch_time DESC) as rn
                 FROM video_stats
             ) vs ON v.video_id = vs.video_id AND vs.rn = 1
-            ORDER BY v.published_at DESC
+            ORDER BY v.added_at DESC
         """)
         return cursor.fetchall()
 
@@ -200,7 +220,7 @@ def get_latest_stats(video_id: str) -> Optional[sqlite3.Row]:
         cursor.execute("""
             SELECT * FROM video_stats 
             WHERE video_id = ? 
-            ORDER BY recorded_at DESC 
+            ORDER BY fetch_time DESC 
             LIMIT 1
         """, (video_id,))
         row = cursor.fetchone()
@@ -222,14 +242,14 @@ def get_video_stats_history(video_id: str, days: int = 30) -> List[Tuple[Any, ..
         cursor = conn.cursor()
         cursor.execute("""
             SELECT 
-                DATE(recorded_at) as date,
+                DATE(fetch_time) as date,
                 AVG(view_count) as avg_views,
                 AVG(like_count) as avg_likes,
                 AVG(comment_count) as avg_comments
             FROM video_stats
             WHERE video_id = ? 
-                AND recorded_at >= DATE('now', ? || ' days')
-            GROUP BY DATE(recorded_at)
+                AND fetch_time >= DATE('now', ? || ' days')
+            GROUP BY DATE(fetch_time)
             ORDER BY date ASC
         """, (video_id, -days))
         return cursor.fetchall()
