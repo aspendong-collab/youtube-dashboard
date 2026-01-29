@@ -391,7 +391,12 @@ def render_video_detail():
     col1, col2 = st.columns([1, 2])
     
     with col1:
-        st.image(video_info.get("thumbnail_url", ""), width='stretch')
+        # 显示视频缩略图
+        thumbnail_url = video_info.get("thumbnail_url")
+        if thumbnail_url:
+            st.image(thumbnail_url, width="stretch")
+        else:
+            st.info("📹 无缩略图", icon="📹")
     
     with col2:
         st.subheader(video_info.get("title", ""))
