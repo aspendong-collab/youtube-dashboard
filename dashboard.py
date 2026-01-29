@@ -151,7 +151,7 @@ def render_video_management():
     with col2:
         st.write("")
         st.write("")
-        add_button = st.button("添加视频", type="primary", use_container_width=True)
+        add_button = st.button("添加视频", type="primary", width='stretch')
     
     # 批量添加
     st.markdown("---")
@@ -263,7 +263,7 @@ def render_video_management():
             })
         
         df = pd.DataFrame(video_list)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, width='stretch', hide_index=True)
 
 
 # ==================== 整体看板页面 ====================
@@ -391,7 +391,7 @@ def render_video_detail():
     col1, col2 = st.columns([1, 2])
     
     with col1:
-        st.image(video_info.get("thumbnail_url", ""), use_container_width=True)
+        st.image(video_info.get("thumbnail_url", ""), width='stretch')
     
     with col2:
         st.subheader(video_info.get("title", ""))
@@ -473,7 +473,7 @@ def render_video_detail():
             font=dict(color="#ffffff")
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
 
 # ==================== 爆款提醒页面 ====================
@@ -570,7 +570,7 @@ def render_seo_analysis():
     
     if tags_data:
         tag_df = pd.DataFrame(tags_data, columns=["标签", "出现次数"])
-        st.dataframe(tag_df.head(20), use_container_width=True, hide_index=True)
+        st.dataframe(tag_df.head(20), width='stretch', hide_index=True)
     else:
         render_empty_state("暂无标签数据", icon="🏷️")
 
@@ -624,7 +624,7 @@ def render_comment_analysis():
     if top_commenters:
         commenter_df = pd.DataFrame(top_commenters)
         st.subheader("最活跃评论者")
-        st.dataframe(commenter_df, use_container_width=True, hide_index=True)
+        st.dataframe(commenter_df, width='stretch', hide_index=True)
     
     # 获取最多点赞的评论
     most_liked = get_most_liked_comments(video_id, limit=10)

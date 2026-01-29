@@ -27,7 +27,7 @@ def main():
         ]
         
         for page_name, page_key in pages:
-            if st.button(page_name, key=f"nav_{page_key}", use_container_width=True):
+            if st.button(page_name, key=f"nav_{page_key}", width='stretch'):
                 st.session_state.current_page = page_key
                 st.rerun()
     

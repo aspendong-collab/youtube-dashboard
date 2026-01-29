@@ -79,7 +79,7 @@ def render_sidebar():
             if st.sidebar.button(
                 page_name,
                 key=button_key,
-                use_container_width=True,
+                width='stretch',
                 help=f"跳转到{page_name}",
             ):
                 st.session_state.current_page = page_key
