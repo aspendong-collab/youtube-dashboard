@@ -8,7 +8,7 @@ def render_sidebar():
     
     # 初始化当前页面
     if "current_page" not in st.session_state:
-        st.session_state.current_page = "video_management"
+        st.session_state.current_page = "overview"
     
     # 侧边栏标题
     st.sidebar.markdown("""
@@ -21,28 +21,13 @@ def render_sidebar():
     
     st.sidebar.markdown("<div style='border-bottom: 1px solid rgba(255,255,255,0.1); margin: 1rem 0;'></div>", unsafe_allow_html=True)
     
-    # 自定义导航选项
+    # 终极精简导航结构（5 个主页面）
     pages = [
-        {"group": "📊 仪表盘", "pages": [
+        {"group": "主功能", "pages": [
+            ("📊 数据概览", "overview"),
             ("📹 视频管理", "video_management"),
-            ("📊 整体看板", "overall_dashboard"),
-            ("📹 单个视频", "video_detail"),
-            ("🔥 爆款提醒", "alerts"),
-        ]},
-        {"group": "📈 数据分析", "pages": [
-            ("🎯 SEO 优化", "seo_analysis"),
-            ("⏱️ 时长分析", "duration_analysis"),
-            ("🕐 发布时间", "publish_time"),
-            ("🏷️ 标签分析", "tags_analysis"),
-        ]},
-        {"group": "💬 深度分析", "pages": [
-            ("😊 情感分析", "sentiment_analysis"),
-            ("👥 用户画像", "user_profile"),
-            ("🔍 评论分析", "comment_analysis"),
-        ]},
-        {"group": "⚙️ 设置", "pages": [
-            ("🔑 API 配置", "api_settings"),
-            ("📊 数据源管理", "data_source"),
+            ("📈 深度分析", "deep_analysis"),
+            ("⚙️ 系统设置", "settings"),
         ]}
     ]
     
@@ -108,7 +93,7 @@ def render_sidebar():
 def get_current_page():
     """获取当前选中的页面"""
     if "current_page" not in st.session_state:
-        st.session_state.current_page = "video_management"
+        st.session_state.current_page = "overview"
     return st.session_state.current_page
 
 
