@@ -322,7 +322,7 @@ def render_overall_dashboard():
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("### 观看量排行 Top 10")
+        st.write("### 观看量排行 Top 10")
         
         video_list = []
         for video in videos:
@@ -358,7 +358,7 @@ def render_overall_dashboard():
         render_chart_container("观看量排行", fig)
     
     with col2:
-        st.markdown("### 互动率排行 Top 10")
+        st.write("### 互动率排行 Top 10")
         
         df_engagement = df.sort_values("互动率", ascending=False).head(10)
         
@@ -389,7 +389,7 @@ def render_overall_dashboard():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown("#### 观看量分布")
+        st.write("#### 观看量分布")
         
         view_ranges = pd.cut(df["观看量"], bins=5, labels=[
             "0-1K", "1K-10K", "10K-50K", "50K-100K", "100K+"
@@ -411,7 +411,7 @@ def render_overall_dashboard():
         render_chart_container("观看量分布", fig)
     
     with col2:
-        st.markdown("#### 互动率分布")
+        st.write("#### 互动率分布")
         
         er_ranges = pd.cut(df["互动率"], bins=5, labels=[
             "0-2%", "2-4%", "4-6%", "6-8%", "8%+"
@@ -433,7 +433,7 @@ def render_overall_dashboard():
         render_chart_container("互动率分布", fig)
     
     with col3:
-        st.markdown("#### 频道分布")
+        st.write("#### 频道分布")
         
         channel_dist = df["频道"].value_counts().head(10)
         
@@ -555,7 +555,7 @@ def render_overall_dashboard():
             )
     
     with col2:
-        st.markdown("#### 数据说明")
+        st.write("#### 数据说明")
         st.info("""
         导出的数据包含所有监控视频的核心指标：
         - 观看量、点赞量、评论量
