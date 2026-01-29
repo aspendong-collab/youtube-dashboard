@@ -272,6 +272,16 @@ def render_overall_dashboard():
     """渲染整体看板页面"""
     
     st.title("📊 整体数据看板")
+
+    # 导航提示
+    st.info("""
+    💡 **导航提示**
+    
+    - 使用左侧导航栏切换页面
+    - 返回主页点击"视频管理"或"整体看板"
+    """, icon="🧭")
+    
+    st.markdown("---")
     
     videos = get_videos()
     
@@ -365,6 +375,16 @@ def render_video_detail():
     """渲染单个视频详情页面"""
     
     st.title("📹 视频详情分析")
+
+    # 导航提示
+    st.info("""
+    💡 **导航提示**
+    
+    - 使用左侧导航栏切换页面
+    - 返回主页点击"视频管理"或"整体看板"
+    """, icon="🧭")
+    
+    st.markdown("---")
     
     # 选择视频
     videos = get_videos()
@@ -487,6 +507,16 @@ def render_alerts():
     """渲染爆款提醒页面"""
     
     st.title("🔥 爆款提醒")
+
+    # 导航提示
+    st.info("""
+    💡 **导航提示**
+    
+    - 使用左侧导航栏切换页面
+    - 返回主页点击"视频管理"或"整体看板"
+    """, icon="🧭")
+    
+    st.markdown("---")
     
     alerts = get_unread_alerts()
     
@@ -513,6 +543,16 @@ def render_seo_analysis():
     """渲染 SEO 分析页面"""
     
     st.title("🎯 SEO 优化分析")
+
+    # 导航提示
+    st.info("""
+    💡 **导航提示**
+    
+    - 使用左侧导航栏切换页面
+    - 返回主页点击"视频管理"或"整体看板"
+    """, icon="🧭")
+    
+    st.markdown("---")
     
     videos = get_videos()
     
@@ -585,26 +625,86 @@ def render_seo_analysis():
 def render_duration_analysis():
     """渲染时长分析页面"""
     st.title("⏱️ 视频时长分析")
+
+    # 导航提示
+    st.info("""
+    💡 **导航提示**
+    
+    - 使用左侧导航栏切换页面
+    - 返回主页点击"视频管理"或"整体看板"
+    """, icon="🧭")
+    
+    st.markdown("---")
+
+    # 导航提示
+    st.info("""
+    💡 **导航提示**
+    
+    - 使用左侧导航栏切换页面
+    - 返回主页点击"视频管理"或"整体看板"
+    """, icon="🧭")
+    
+    st.markdown("---")
     render_info_box("功能开发中", "此功能正在开发中，敬请期待！")
 
 def render_publish_time_analysis():
     """渲染发布时间分析页面"""
     st.title("🕐 发布时间分析")
+
+    # 导航提示
+    st.info("""
+    💡 **导航提示**
+    
+    - 使用左侧导航栏切换页面
+    - 返回主页点击"视频管理"或"整体看板"
+    """, icon="🧭")
+    
+    st.markdown("---")
     render_info_box("功能开发中", "此功能正在开发中，敬请期待！")
 
 def render_tags_analysis():
     """渲染标签分析页面"""
     st.title("🏷️ 标签分析")
+
+    # 导航提示
+    st.info("""
+    💡 **导航提示**
+    
+    - 使用左侧导航栏切换页面
+    - 返回主页点击"视频管理"或"整体看板"
+    """, icon="🧭")
+    
+    st.markdown("---")
     render_info_box("功能开发中", "此功能正在开发中，敬请期待！")
 
 def render_sentiment_analysis():
     """渲染情感分析页面"""
     st.title("😊 情感分析")
+
+    # 导航提示
+    st.info("""
+    💡 **导航提示**
+    
+    - 使用左侧导航栏切换页面
+    - 返回主页点击"视频管理"或"整体看板"
+    """, icon="🧭")
+    
+    st.markdown("---")
     render_info_box("功能开发中", "此功能正在开发中，敬请期待！")
 
 def render_user_profile():
     """渲染用户画像页面"""
     st.title("👥 用户画像")
+
+    # 导航提示
+    st.info("""
+    💡 **导航提示**
+    
+    - 使用左侧导航栏切换页面
+    - 返回主页点击"视频管理"或"整体看板"
+    """, icon="🧭")
+    
+    st.markdown("---")
     render_info_box("功能开发中", "此功能正在开发中，敬请期待！")
 
 def render_comment_analysis():
