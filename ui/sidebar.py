@@ -1,24 +1,15 @@
-"""
-侧边栏组件
-自定义侧边栏导航，实现可点击变色的效果
-"""
+"""UI组件 - 侧边栏"""
 
 import streamlit as st
-from .styles import get_custom_styles, get_sidebar_styles
 
 
 def render_sidebar():
     """渲染自定义侧边栏"""
     
-    # 应用自定义样式
-    st.markdown(get_custom_styles(), unsafe_allow_html=True)
-    st.markdown(get_sidebar_styles(), unsafe_allow_html=True)
-    
     # 初始化当前页面
     if "current_page" not in st.session_state:
         st.session_state.current_page = "video_management"
     
-    # 使用 st.sidebar 的 radio 组件，但通过 CSS 隐藏默认样式
     # 侧边栏标题
     st.sidebar.markdown("""
     <div style="text-align: center; padding: 1.5rem 0 1rem 0;">
@@ -125,4 +116,3 @@ def set_current_page(page):
     """设置当前页面"""
     st.session_state.current_page = page
     st.rerun()
-
