@@ -1,2 +1,6 @@
 [logger]
 level = "info"
+
+[client]
+showErrorDetails = true
+toolbarMode = "minimal"
