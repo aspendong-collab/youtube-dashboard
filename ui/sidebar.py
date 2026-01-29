@@ -11,15 +11,7 @@ def render_sidebar():
         st.session_state.current_page = "overview"
     
     # 侧边栏标题
-    st.sidebar.markdown("""
-    <div style="text-align: center; padding: 1.5rem 0 1rem 0;">
-        <h2 style="font-size: 1.5rem; font-weight: 700; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
-            📊 YouTube Analytics
-        </h2>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.sidebar.markdown("<div style='border-bottom: 1px solid rgba(255,255,255,0.1); margin: 1rem 0;'></div>", unsafe_allow_html=True)
+    st.sidebar.write("📊 YouTube Analytics")
     
     # 终极精简导航结构（5 个主页面）
     pages = [
@@ -34,11 +26,7 @@ def render_sidebar():
     # 渲染导航
     for group in pages:
         # 分组标题
-        st.sidebar.markdown(f"""
-        <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #8892b0; margin: 1.5rem 0 0.5rem 0; padding: 0 1rem;">
-            {group["group"]}
-        </div>
-        """, unsafe_allow_html=True)
+        st.sidebar.write(group["group"])
         
         # 页面选项
         for page_name, page_key in group["pages"]:
@@ -71,21 +59,15 @@ def render_sidebar():
                 st.rerun()
     
     # 底部提示
-    st.sidebar.markdown("<div style='border-bottom: 1px solid rgba(255,255,255,0.1); margin: 2rem 0;'></div>", unsafe_allow_html=True)
+    st.sidebar.write("---")
     
-    st.sidebar.markdown("""
-    <div style="padding: 1rem; margin-top: 1rem; background: rgba(102, 126, 234, 0.1); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
-        <p style="font-size: 0.85rem; color: #b8c1ec; margin: 0 0 0.5rem 0;">
-            💡 <strong>使用提示</strong>
-        </p>
-        <ul style="font-size: 0.85rem; color: #8892b0; margin: 0; padding-left: 1.5rem;">
-            <li>在"视频管理"添加视频</li>
-            <li>实时获取数据（1-2秒）</li>
-            <li>查看深度分析报告</li>
-            <li>优化内容策略</li>
-        </ul>
-    </div>
-    """, unsafe_allow_html=True)
+    st.sidebar.write("""
+**使用提示:**
+- 在"视频管理"添加视频
+- 实时获取数据（1-2秒）
+- 查看深度分析报告
+- 优化内容策略
+    """)
     
     return st.session_state.current_page
 
