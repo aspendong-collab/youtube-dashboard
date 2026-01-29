@@ -33,6 +33,7 @@ def init_database():
     初始化数据库表结构
     
     如果表不存在，则创建必要的表
+    如果表存在但缺少列，则自动添加缺失的列
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -67,6 +68,14 @@ def init_database():
             FOREIGN KEY (video_id) REFERENCES videos(video_id)
         )
         """)
+        
+        # 检查并修复 video_stats 表的 recorded_at 列
+        try:
+            cursor.execute("SELECT recorded_at FROM video_stats LIMIT 1")
+        except sqlite3.OperationalError:
+            # 列不存在，添加列
+            cursor.execute("ALTER TABLE video_stats ADD COLUMN recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+            conn.commit()
         
         # 创建评论表
         cursor.execute("""
