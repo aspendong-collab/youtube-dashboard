@@ -375,7 +375,11 @@ def generate_word_cloud(comments):
 
     # 过滤掉常见词
     stop_words = {'的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这'}
-    word_counts = {k: v for k, v in word_counts.items() if len(k) > 1 and k not in stop_words}
+
+    # 从 Counter 对象中过滤停用词
+    for word in list(word_counts.keys()):
+        if len(word) <= 1 or word in stop_words:
+            del word_counts[word]
 
     # 取前 50 个高频词
     top_words = word_counts.most_common(50)
@@ -792,6 +796,86 @@ def render_video_detail_dashboard(conn):
                     height=500
                 )
                 st.plotly_chart(fig_words, use_container_width=True)
+
+            # 生成优化建议
+            st.divider()
+            st.subheader("💡 智能优化建议")
+
+            # 基于视频指标生成建议
+            suggestions = []
+
+            # 互动率分析
+            avg_rate = df_stats['engagement_rate'].mean()
+            latest_rate = df_stats['engagement_rate'].iloc[-1]
+
+            if latest_rate < avg_rate:
+                suggestions.append({
+                    '类型': '互动率下降',
+                    '建议': '近期互动率低于平均水平，建议在视频中增加提问互动环节，鼓励观众评论和点赞',
+                    '优先级': '🔴 高'
+                })
+            elif latest_rate < 3:
+                suggestions.append({
+                    '类型': '互动率偏低',
+                    '建议': '互动率持续偏低，考虑优化视频内容结构，在前30秒抓住观众注意力',
+                    '优先级': '🟡 中'
+                })
+
+            # 播放量趋势分析
+            view_growth = (df_stats['view_count'].iloc[-1] - df_stats['view_count'].iloc[0]) / df_stats['view_count'].iloc[0] * 100
+            if view_growth < 0:
+                suggestions.append({
+                    '类型': '播放量下降',
+                    '建议': '近期播放量出现下滑，建议分析热门评论，了解观众反馈并调整内容方向',
+                    '优先级': '🔴 高'
+                })
+            elif view_growth > 50:
+                suggestions.append({
+                    '类型': '播放量增长良好',
+                    '建议': '视频表现优秀，建议保持当前内容风格，并考虑制作系列视频以维持热度',
+                    '优先级': '🟢 低'
+                })
+
+            # 评论词云分析
+            positive_keywords = {'好', '棒', '喜欢', '爱', '优秀', '厉害', '赞', '美', '强', '牛'}
+            negative_keywords = {'差', '烂', '不好', '失望', '讨厌', '烦', '垃圾', '无聊'}
+
+            positive_count = sum(1 for word, _ in word_cloud_data if word in positive_keywords)
+            negative_count = sum(1 for word, _ in word_cloud_data if word in negative_keywords)
+
+            if negative_count > positive_count:
+                suggestions.append({
+                    '类型': '评论情感偏负面',
+                    '建议': f'高频词中出现较多负面词汇，建议关注评论区反馈，及时回应观众关切',
+                    '优先级': '🔴 高'
+                })
+            elif positive_count > negative_count * 2:
+                suggestions.append({
+                    '类型': '评论情感积极',
+                    '建议': '观众反馈积极，可以分享制作心得，增强与粉丝的互动',
+                    '优先级': '🟢 低'
+                })
+
+            # 评论数量分析
+            comment_growth = (df_stats['comment_count'].iloc[-1] - df_stats['comment_count'].iloc[0])
+            if comment_growth < 10:
+                suggestions.append({
+                    '类型': '评论增长缓慢',
+                    '建议': '评论数量增长较少，建议在视频结尾设置互动话题，引导观众发表看法',
+                    '优先级': '🟡 中'
+                })
+
+            # 显示建议
+            if suggestions:
+                df_suggestions = pd.DataFrame(suggestions)
+                df_suggestions = df_suggestions.sort_values('优先级', key=lambda x: x.map({'🔴 高': 0, '🟡 中': 1, '🟢 低': 2}))
+                st.dataframe(
+                    df_suggestions,
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.info("📊 当前数据表现稳定，暂无特别建议")
         else:
             st.info("📭 暂无足够的评论生成词云")
     else:
