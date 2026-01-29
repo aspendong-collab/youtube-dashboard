@@ -22,9 +22,29 @@
 - 大量开发工具和测试框架
 
 ### 3. dashboard.py 修复
-修复了 `generate_word_cloud` 函数的类型检查和防御性编程。
+
+#### 修复 1: generate_word_cloud 函数
+- 添加类型检查，确保输入是列表或元组
+- 添加元素类型验证，跳过非字符串元素
+- 添加防御性检查，确保 `word_counts` 在任何情况下都是 `Counter` 对象
+- 增强文档字符串，明确参数和返回值类型
+
+#### 修复 2: save_video_ids_to_github 函数
+- 移除所有 `subprocess` 调用（subprocess 在 Streamlit Cloud 上不可用）
+- 改为提示用户手动提交到 GitHub
+- 提供清晰的指导说明
+
+### 4. Git 修复
+- 使用 --force 强制推送到 origin/main，避免 rebase 冲突
+- 确保远程仓库包含正确的简化版本
 
 ## 部署说明
-1. 推送代码到 GitHub
+1. 代码已推送到 GitHub
 2. 在 Streamlit Cloud 重新部署
 3. 等待 2-3 分钟完成依赖安装
+4. 应用应该能够正常启动
+
+## 注意事项
+- Streamlit Cloud 环境下无法直接执行 git 命令
+- 视频添加后，需要手动在 GitHub 仓库中更新 videos.txt
+- 数据更新需要通过 GitHub Actions 触发

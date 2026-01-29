@@ -186,21 +186,12 @@ def save_video_ids_to_github(video_ids):
                 for vid in new_videos:
                     f.write(f"{vid}\n")
             
-            # 提交到GitHub
-            import subprocess
-            try:
-                subprocess.run(['git', 'config', '--local', 'user.email', 'action@github.com'], 
-                             check=True, capture_output=True)
-                subprocess.run(['git', 'config', '--local', 'user.name', 'GitHub Action'], 
-                             check=True, capture_output=True)
-                subprocess.run(['git', 'add', 'videos.txt'], check=True, capture_output=True)
-                subprocess.run(['git', 'commit', '-m', 'feat: 添加视频到监控列表'], 
-                             check=True, capture_output=True)
-                subprocess.run(['git', 'push'], check=True, capture_output=True)
-            except subprocess.CalledProcessError as e:
-                st.error(f"❌ 无法提交到GitHub: {e}")
-                st.info("💡 提示：Streamlit Cloud 环境下无法直接提交到GitHub")
-                st.info("📝 视频已保存到本地，GitHub Actions 会自动处理")
+            # Streamlit Cloud 环境下无法直接提交到GitHub
+            # 用户需要手动推送或在 GitHub 仓库中更新 videos.txt
+            st.warning("⚠️ 视频已保存到本地 videos.txt")
+            st.info("💡 请手动将 videos.txt 提交到 GitHub 仓库")
+            st.info("📝 或访问 GitHub Actions 页面手动触发数据更新")
+            st.markdown("🔗 [GitHub Actions](https://github.com/aspendong-collab/youtube-dashboard/actions)")
     except Exception as e:
         st.error(f"❌ 保存视频失败: {e}")
 
