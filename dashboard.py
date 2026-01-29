@@ -269,7 +269,7 @@ def render_video_management():
 # ==================== 整体看板页面 ====================
 
 def render_overall_dashboard():
-    """渲染整体看板页面"""
+    """渲染整体看板页面 - 增强版本"""
     
     st.title("📊 整体数据看板")
 
@@ -289,74 +289,178 @@ def render_overall_dashboard():
         render_empty_state("暂无监控视频，请先添加视频", icon="📊")
         return
     
+    # ==================== 1. 核心指标 ====================
+    st.subheader("📈 核心指标")
+    
     # 计算总体数据
     total_views = sum([video[4] or 0 for video in videos])
     total_likes = sum([video[5] or 0 for video in videos])
     total_comments = sum([video[6] or 0 for video in videos])
     
-    # 渲染指标卡片
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        render_metric_card("总观看量", format_number(total_views))
-    
-    with col2:
-        render_metric_card("总点赞量", format_number(total_likes))
-    
-    with col3:
-        render_metric_card("总评论量", format_number(total_comments))
-    
-    # 视频排行
-    render_separator("热门视频排行")
-    
-    video_list = []
+    # 计算平均互动率
+    engagement_rates = []
     for video in videos:
-        engagement_rate = calculate_engagement_rate(
+        er = calculate_engagement_rate(
             video[5] or 0,
             video[6] or 0,
             video[4] or 0
         )
-        video_list.append({
-            "视频标题": video[1],
-            "观看量": video[4] or 0,
-            "点赞量": video[5] or 0,
-            "评论量": video[6] or 0,
-            "互动率": engagement_rate
-        })
+        engagement_rates.append(er)
     
-    df = pd.DataFrame(video_list)
-    df_sorted = df.sort_values("观看量", ascending=False).head(10)
+    avg_engagement_rate = sum(engagement_rates) / len(engagement_rates) if engagement_rates else 0
     
-    # 创建对比图表
+    # 统计频道数量
+    channels = set([video[2] for video in videos])
+    channel_count = len(channels)
+    
+    # 显示核心指标
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
+    with col1:
+        render_metric_card("总视频数", len(videos))
+    
+    with col2:
+        render_metric_card("总频道数", channel_count)
+    
+    with col3:
+        render_metric_card("总观看量", format_number(total_views))
+    
+    with col4:
+        render_metric_card("总点赞量", format_number(total_likes))
+    
+    with col5:
+        render_metric_card("平均互动率", format_percentage(avg_engagement_rate))
+    
+    st.markdown("---")
+    
+    # ==================== 2. 观看趋势 ====================
+    st.subheader("📈 观看趋势")
+    
+    # 创建趋势图表
     col1, col2 = st.columns(2)
     
     with col1:
+        st.markdown("### 观看量排行 Top 10")
+        
+        video_list = []
+        for video in videos:
+            video_list.append({
+                "视频标题": truncate_text(video[1], 40),
+                "频道": video[2],
+                "观看量": video[4] or 0,
+                "点赞量": video[5] or 0,
+                "评论量": video[6] or 0,
+                "互动率": calculate_engagement_rate(video[5] or 0, video[6] or 0, video[4] or 0)
+            })
+        
+        df = pd.DataFrame(video_list)
+        df_sorted = df.sort_values("观看量", ascending=False).head(10)
+        
         fig = px.bar(
             df_sorted,
             x="观看量",
             y="视频标题",
             orientation="h",
-            title="观看量 Top 10",
             color="观看量",
-            color_continuous_scale="viridis"
+            color_continuous_scale="viridis",
+            title="观看量 Top 10"
         )
         fig.update_layout(
             template="plotly_dark",
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             font=dict(color="#ffffff"),
-            height=500
+            height=500,
+            margin=dict(l=0, r=0, t=30, b=0)
         )
         render_chart_container("观看量排行", fig)
     
     with col2:
+        st.markdown("### 互动率排行 Top 10")
+        
+        df_engagement = df.sort_values("互动率", ascending=False).head(10)
+        
         fig = px.bar(
-            df_sorted,
+            df_engagement,
             x="互动率",
             y="视频标题",
             orientation="h",
-            title="互动率 Top 10",
             color="互动率",
+            color_continuous_scale="plasma",
+            title="互动率 Top 10"
+        )
+        fig.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#ffffff"),
+            height=500,
+            margin=dict(l=0, r=0, t=30, b=0)
+        )
+        render_chart_container("互动率排行", fig)
+    
+    st.markdown("---")
+    
+    # ==================== 3. 内容表现分布 ====================
+    st.subheader("📊 内容表现分布")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("#### 观看量分布")
+        
+        view_ranges = pd.cut(df["观看量"], bins=5, labels=[
+            "0-1K", "1K-10K", "10K-50K", "50K-100K", "100K+"
+        ])
+        view_dist = pd.DataFrame({"观看量范围": view_ranges})
+        view_counts = view_dist["观看量范围"].value_counts().sort_index()
+        
+        fig = px.pie(
+            values=view_counts.values,
+            names=view_counts.index,
+            title="观看量分布",
+            hole=0.3
+        )
+        fig.update_layout(
+            template="plotly_dark",
+            font=dict(color="#ffffff"),
+            height=400
+        )
+        render_chart_container("观看量分布", fig)
+    
+    with col2:
+        st.markdown("#### 互动率分布")
+        
+        er_ranges = pd.cut(df["互动率"], bins=5, labels=[
+            "0-2%", "2-4%", "4-6%", "6-8%", "8%+"
+        ])
+        er_dist = pd.DataFrame({"互动率范围": er_ranges})
+        er_counts = er_dist["互动率范围"].value_counts().sort_index()
+        
+        fig = px.pie(
+            values=er_counts.values,
+            names=er_counts.index,
+            title="互动率分布",
+            hole=0.3
+        )
+        fig.update_layout(
+            template="plotly_dark",
+            font=dict(color="#ffffff"),
+            height=400
+        )
+        render_chart_container("互动率分布", fig)
+    
+    with col3:
+        st.markdown("#### 频道分布")
+        
+        channel_dist = df["频道"].value_counts().head(10)
+        
+        fig = px.bar(
+            x=channel_dist.values,
+            y=channel_dist.index,
+            orientation="h",
+            title="频道视频数量",
+            color=channel_dist.values,
             color_continuous_scale="viridis"
         )
         fig.update_layout(
@@ -364,9 +468,118 @@ def render_overall_dashboard():
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             font=dict(color="#ffffff"),
-            height=500
+            height=400
         )
-        render_chart_container("互动率排行", fig)
+        render_chart_container("频道分布", fig)
+    
+    st.markdown("---")
+    
+    # ==================== 4. 关键洞察 ====================
+    st.subheader("💡 关键洞察")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 表现最佳")
+        
+        best_video = df.loc[df["观看量"].idxmax()]
+        st.success(f"""
+        **最高观看量**: {best_video['视频标题']}
+        
+        - 观看量: {format_number(best_video['观看量'])}
+        - 互动率: {format_percentage(best_video['互动率'])}
+        - 频道: {best_video['频道']}
+        """)
+    
+    with col2:
+        st.markdown("#### 互动最佳")
+        
+        best_engagement = df.loc[df["互动率"].idxmax()]
+        st.info(f"""
+        **最高互动率**: {best_engagement['视频标题']}
+        
+        - 观看量: {format_number(best_engagement['观看量'])}
+        - 互动率: {format_percentage(best_engagement['互动率'])}
+        - 点赞量: {format_number(best_engagement['点赞量'])}
+        """)
+    
+    st.markdown("---")
+    
+    # ==================== 5. 优化建议 ====================
+    st.subheader("🎯 优化建议")
+    
+    # 基于数据的建议
+    suggestions = []
+    
+    # 1. 互动率分析
+    low_engagement = df[df["互动率"] < 3]
+    if len(low_engagement) > 0:
+        suggestions.append({
+            "type": "warning",
+            "title": "部分视频互动率偏低",
+            "message": f"有 {len(low_engagement)} 个视频的互动率低于 3%，建议：\n"
+                      "- 在视频结尾提出问题引导评论\n"
+                      "- 增加互动元素（投票、问答）\n"
+                      "- 优化视频开头前 3 秒的吸引力"
+        })
+    else:
+        suggestions.append({
+            "type": "success",
+            "title": "互动率表现优秀",
+            "message": "所有视频的互动率都在合理范围内，继续保持！"
+        })
+    
+    # 2. 观看量分析
+    high_performers = df[df["观看量"] > 10000]
+    if len(high_performers) > 0:
+        suggestions.append({
+            "type": "info",
+            "title": "发现高表现视频",
+            "message": f"有 {len(high_performers)} 个视频观看量超过 1万，建议分析这些视频的共同特点。"
+        })
+    
+    # 3. 发布时间建议
+    suggestions.append({
+        "type": "info",
+        "title": "发布时间优化",
+        "message": "建议分析高表现视频的发布时间，找出最佳发布时段。"
+    })
+    
+    # 显示建议
+    for i, sugg in enumerate(suggestions, 1):
+        if sugg["type"] == "warning":
+            st.warning(f"**{i}. {sugg['title']}**\n\n{sugg['message']}")
+        elif sugg["type"] == "success":
+            st.success(f"**{i}. {sugg['title']}**\n\n{sugg['message']}")
+        else:
+            st.info(f"**{i}. {sugg['title']}**\n\n{sugg['message']}")
+    
+    st.markdown("---")
+    
+    # ==================== 6. 数据导出 ====================
+    st.subheader("📥 数据导出")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("导出完整数据", key="export_overall_dashboard", type="primary"):
+            csv = df.to_csv(index=False)
+            st.download_button(
+                label="下载 CSV",
+                data=csv,
+                file_name="youtube_dashboard_data.csv",
+                mime="text/csv",
+                key="download_overall_dashboard"
+            )
+    
+    with col2:
+        st.markdown("#### 数据说明")
+        st.info("""
+        导出的数据包含所有监控视频的核心指标：
+        - 观看量、点赞量、评论量
+        - 互动率
+        - 频道信息
+        """, icon="📊")
 
 
 # ==================== 单个视频详情页面 ====================
