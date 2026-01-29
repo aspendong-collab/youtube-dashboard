@@ -90,14 +90,7 @@ def main():
     current_page = render_sidebar()
     
     # 应用全局样式
-    st.markdown("""
-    <style>
-    .stApp {
-        background: linear-gradient(135deg, #0a0e27 0%, #16213e 100%);
-        color: #ffffff;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    st.write("YouTube Analytics Dashboard")
     
     # 根据当前页面路由（终极精简结构）
     if current_page == "overview":
@@ -136,7 +129,7 @@ def render_video_management():
         add_button = st.button("添加视频", type="primary", width='stretch')
     
     # 批量添加
-    st.markdown("---")
+    st.write("---")
     render_section_title("批量添加视频", "支持通过文本文件批量添加多个视频")
     
     uploaded_file = st.file_uploader(
@@ -263,7 +256,7 @@ def render_overall_dashboard():
     - 返回主页点击"视频管理"或"整体看板"
     """, icon="🧭")
     
-    st.markdown("---")
+    st.write("---")
     
     videos = get_videos()
     
@@ -313,7 +306,7 @@ def render_overall_dashboard():
     with col5:
         render_metric_card("平均互动率", format_percentage(avg_engagement_rate))
     
-    st.markdown("---")
+    st.write("---")
     
     # ==================== 2. 观看趋势 ====================
     st.subheader("📈 观看趋势")
@@ -381,7 +374,7 @@ def render_overall_dashboard():
         )
         render_chart_container("互动率排行", fig)
     
-    st.markdown("---")
+    st.write("---")
     
     # ==================== 3. 内容表现分布 ====================
     st.subheader("📊 内容表现分布")
@@ -454,7 +447,7 @@ def render_overall_dashboard():
         )
         render_chart_container("频道分布", fig)
     
-    st.markdown("---")
+    st.write("---")
     
     # ==================== 4. 关键洞察 ====================
     st.subheader("💡 关键洞察")
@@ -462,7 +455,7 @@ def render_overall_dashboard():
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("#### 表现最佳")
+        st.write("#### 表现最佳")
         
         best_video = df.loc[df["观看量"].idxmax()]
         st.success(f"""
@@ -474,7 +467,7 @@ def render_overall_dashboard():
         """)
     
     with col2:
-        st.markdown("#### 互动最佳")
+        st.write("#### 互动最佳")
         
         best_engagement = df.loc[df["互动率"].idxmax()]
         st.info(f"""
@@ -485,7 +478,7 @@ def render_overall_dashboard():
         - 点赞量: {format_number(best_engagement['点赞量'])}
         """)
     
-    st.markdown("---")
+    st.write("---")
     
     # ==================== 5. 优化建议 ====================
     st.subheader("🎯 优化建议")
@@ -536,7 +529,7 @@ def render_overall_dashboard():
         else:
             st.info(f"**{i}. {sugg['title']}**\n\n{sugg['message']}")
     
-    st.markdown("---")
+    st.write("---")
     
     # ==================== 6. 数据导出 ====================
     st.subheader("📥 数据导出")
@@ -579,7 +572,7 @@ def render_video_detail():
     - 返回主页点击"视频管理"或"整体看板"
     """, icon="🧭")
     
-    st.markdown("---")
+    st.write("---")
     
     # 选择视频
     videos = get_videos()
@@ -711,7 +704,7 @@ def render_alerts():
     - 返回主页点击"视频管理"或"整体看板"
     """, icon="🧭")
     
-    st.markdown("---")
+    st.write("---")
     
     alerts = get_unread_alerts()
     
@@ -729,7 +722,7 @@ def render_alerts():
                     mark_alert_as_read(alert[0])
                     st.rerun()
                 
-                st.markdown("---")
+                st.write("---")
 
 
 # ==================== SEO 分析页面 ====================
@@ -747,7 +740,7 @@ def render_seo_analysis():
     - 返回主页点击"视频管理"或"整体看板"
     """, icon="🧭")
     
-    st.markdown("---")
+    st.write("---")
     
     videos = get_videos()
     
@@ -829,7 +822,7 @@ def render_duration_analysis():
     - 返回主页点击"视频管理"或"整体看板"
     """, icon="🧭")
     
-    st.markdown("---")
+    st.write("---")
 
     # 导航提示
     st.info("""
@@ -839,7 +832,7 @@ def render_duration_analysis():
     - 返回主页点击"视频管理"或"整体看板"
     """, icon="🧭")
     
-    st.markdown("---")
+    st.write("---")
     render_info_box("功能开发中", "此功能正在开发中，敬请期待！")
 
 def render_publish_time_analysis():
@@ -854,7 +847,7 @@ def render_publish_time_analysis():
     - 返回主页点击"视频管理"或"整体看板"
     """, icon="🧭")
     
-    st.markdown("---")
+    st.write("---")
     render_info_box("功能开发中", "此功能正在开发中，敬请期待！")
 
 def render_tags_analysis():
@@ -869,7 +862,7 @@ def render_tags_analysis():
     - 返回主页点击"视频管理"或"整体看板"
     """, icon="🧭")
     
-    st.markdown("---")
+    st.write("---")
     render_info_box("功能开发中", "此功能正在开发中，敬请期待！")
 
 def render_sentiment_analysis():
@@ -884,7 +877,7 @@ def render_sentiment_analysis():
     - 返回主页点击"视频管理"或"整体看板"
     """, icon="🧭")
     
-    st.markdown("---")
+    st.write("---")
     render_info_box("功能开发中", "此功能正在开发中，敬请期待！")
 
 def render_user_profile():
@@ -899,7 +892,7 @@ def render_user_profile():
     - 返回主页点击"视频管理"或"整体看板"
     """, icon="🧭")
     
-    st.markdown("---")
+    st.write("---")
     render_info_box("功能开发中", "此功能正在开发中，敬请期待！")
 
 def render_comment_analysis():
@@ -932,9 +925,9 @@ def render_comment_analysis():
     if most_liked:
         st.subheader("最多点赞的评论")
         for i, comment in enumerate(most_liked, 1):
-            st.markdown(f"**{i}. {comment['author_name']}** ({comment['like_count']} 点赞)")
-            st.markdown(f">{comment['text'][:200]}...")
-            st.markdown("---")
+            st.write(f"**{i}. {comment['author_name']}** ({comment['like_count']} 点赞)")
+            st.write(f">{comment['text'][:200]}...")
+            st.write("---")
 
 
 def render_api_settings():
@@ -964,7 +957,7 @@ def render_data_source():
     
     render_info_box("数据源说明", "当前使用 SQLite 数据库存储数据，数据文件为 youtube_dashboard.db")
     
-    st.markdown("---")
+    st.write("---")
     
     render_section_title("数据库统计")
     
@@ -1022,7 +1015,7 @@ def render_overview():
     col3.metric("总点赞量", format_number(total_likes))
     col4.metric("平均互动率", format_percentage(df["互动率"].mean()))
     
-    st.markdown("---")
+    st.write("---")
     
     # 观看趋势
     st.write("#### 📈 观看趋势")
@@ -1042,7 +1035,7 @@ def render_overview():
         fig.update_layout(template="plotly_dark", font=dict(color="#ffffff"))
         st.plotly_chart(fig, use_container_width=True)
     
-    st.markdown("---")
+    st.write("---")
     
     # 数据导出
     st.write("#### 📥 数据导出")
