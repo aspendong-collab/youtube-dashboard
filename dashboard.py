@@ -355,7 +355,18 @@ def get_alerts(conn, days=7):
 
 
 def generate_word_cloud(comments):
-    """生成词云数据"""
+    """生成词云数据
+    
+    参数:
+        comments: 评论列表，每个元素应为字符串
+    
+    返回:
+        词频列表 [(word, count), ...] 或 None
+    """
+    # 防御性检查：确保输入是列表
+    if not isinstance(comments, (list, tuple)):
+        return None
+    
     if not comments:
         return None
 
@@ -364,6 +375,10 @@ def generate_word_cloud(comments):
 
     all_words = []
     for comment in comments:
+        # 确保每个元素是字符串类型
+        if not isinstance(comment, str):
+            continue
+        
         # 提取中文和英文单词
         words = re.findall(r'[\u4e00-\u9fa5]+|[a-zA-Z]+', comment)
         all_words.extend(words)
@@ -381,6 +396,10 @@ def generate_word_cloud(comments):
     for word in list(word_counts.keys()):
         if len(word) <= 1 or word in stop_words:
             del word_counts[word]
+
+    # 确保word_counts仍然是Counter对象（防御性检查）
+    if not isinstance(word_counts, Counter):
+        word_counts = Counter(word_counts)
 
     # 取前 50 个高频词
     top_words = word_counts.most_common(50)
