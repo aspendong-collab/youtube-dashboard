@@ -4,6 +4,7 @@
 """
 
 import sqlite3
+import os
 from contextlib import contextmanager
 from typing import List, Tuple, Any, Optional
 import streamlit as st
@@ -20,7 +21,9 @@ def get_db_connection():
             cursor.execute("SELECT * FROM videos")
             rows = cursor.fetchall()
     """
-    conn = sqlite3.connect("youtube_dashboard.db")
+    # 在 Streamlit Cloud 上使用绝对路径
+    db_path = os.path.join(os.getcwd(), "youtube_dashboard.db")
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
         yield conn
