@@ -2,7 +2,6 @@
 配置管理模块
 """
 import os
-from typing import Optional
 
 
 class Config:
@@ -47,23 +46,9 @@ class Config:
         """
         cls.YOUTUBE_API_KEY = api_key
         os.environ["YOUTUBE_API_KEY"] = api_key
-    
-    @classmethod
-    def get_api_key(cls) -> Optional[str]:
-        """
-        获取 YouTube API 密钥
-        
-        Returns:
-            API 密钥，如果未设置则返回 None
-        """
-        return cls.YOUTUBE_API_KEY if cls.YOUTUBE_API_KEY else None
-    
-    @classmethod
-    def is_api_key_configured(cls) -> bool:
-        """
-        检查 API 密钥是否已配置
-        
-        Returns:
-            是否已配置
-        """
-        return bool(cls.YOUTUBE_API_KEY)
+
+
+# 全局函数，方便导入
+def set_api_key(api_key: str) -> None:
+    """设置 YouTube API 密钥"""
+    Config.set_api_key(api_key)

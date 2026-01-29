@@ -76,7 +76,7 @@ init_database()
 
 # 初始化 session state
 if "api_key" not in st.session_state:
-    st.session_state.api_key = Config.get_api_key()
+    st.session_state.api_key = Config.YOUTUBE_API_KEY
 if "selected_videos" not in st.session_state:
     st.session_state.selected_videos = []
 
