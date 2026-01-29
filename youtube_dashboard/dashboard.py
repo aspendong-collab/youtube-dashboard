@@ -697,6 +697,7 @@ def render_video_detail_dashboard(conn):
         title='📈 播放量趋势',
         markers=True,
         template='plotly_white'
+    )
 
     # 播放量趋势
     fig_views = px.line(
@@ -706,6 +707,7 @@ def render_video_detail_dashboard(conn):
         title='📈 播放量趋势',
         markers=True,
         template='plotly_white'
+    )
     )
     fig_views.update_layout(
         xaxis_title='日期',
