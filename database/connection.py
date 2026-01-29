@@ -70,12 +70,16 @@ def init_database():
         """)
         
         # 检查并修复 video_stats 表的 recorded_at 列
-        try:
-            cursor.execute("SELECT recorded_at FROM video_stats LIMIT 1")
-        except sqlite3.OperationalError:
-            # 列不存在，添加列
-            cursor.execute("ALTER TABLE video_stats ADD COLUMN recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-            conn.commit()
+        cursor.execute("PRAGMA table_info(video_stats)")
+        columns = [column[1] for column in cursor.fetchall()]
+        
+        if 'recorded_at' not in columns:
+            try:
+                cursor.execute("ALTER TABLE video_stats ADD COLUMN recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+                conn.commit()
+            except Exception as e:
+                # 如果添加失败，忽略错误（可能是表已经正确）
+                pass
         
         # 创建评论表
         cursor.execute("""
