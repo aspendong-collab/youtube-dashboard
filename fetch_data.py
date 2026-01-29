@@ -458,6 +458,44 @@ def check_data_anomaly(cursor, video_data):
                 ))
 
 
+def get_video_ids_from_file():
+    """从 videos.txt 文件读取视频 ID"""
+    videos_file = Path('videos.txt')
+    
+    if not videos_file.exists():
+        print("⚠️ videos.txt 文件不存在")
+        return []
+    
+    video_ids = []
+    with open(videos_file, 'r') as f:
+        for line in f.readlines():
+            line = line.strip()
+            # 跳过空行和注释
+            if not line or line.startswith('#'):
+                continue
+            
+            # 提取 video_id
+            if 'youtube.com' in line or 'youtu.be' in line:
+                # 从 URL 提取
+                if 'v=' in line:
+                    video_id = line.split('v=')[1].split('&')[0][:11]
+                elif '/watch?v=' in line:
+                    video_id = line.split('/watch?v=')[1][:11]
+                elif 'youtu.be/' in line:
+                    video_id = line.split('youtu.be/')[1][:11]
+                else:
+                    continue
+            else:
+                # 直接是 video_id
+                video_id = line[:11]
+            
+            if video_id:
+                video_ids.append(video_id)
+    
+    print(f"✅ 从 videos.txt 读取到 {len(video_ids)} 个视频")
+    return video_ids
+
+
 # ==================== 主程序 ====================
 
 def main():
@@ -480,32 +518,36 @@ def main():
     conn = get_connection()
     print(f"✅ 数据库已连接")
 
-      # 获取所有活跃视频
-    cursor = conn.cursor()
+    # 从 videos.txt 读取视频 ID
+    video_ids = get_video_ids_from_file()
     
-    # 优先从 videos.txt 读取
-    videos_file = Path('videos.txt')
-    if videos_file.exists():
-        with open(videos_file, 'r') as f:
-            video_ids = [line.strip() for line in f.readlines() 
-                        if line.strip() and not line.strip().startswith('#')]
-        
-        # 确保所有视频都在数据库中
+    if not video_ids:
+        print("⚠️ videos.txt 中没有视频，跳过文件读取")
+        # 从数据库读取
+        cursor = conn.cursor()
+        cursor.execute('SELECT video_id FROM videos WHERE is_active = 1')
+        videos = cursor.fetchall()
+    else:
+        # 将 videos.txt 中的视频添加到数据库
+        cursor = conn.cursor()
         for video_id in video_ids:
             cursor.execute('''
                 INSERT OR IGNORE INTO videos (video_id, title, channel_title, is_active)
                 VALUES (?, ?, ?, 1)
             ''', (video_id, '待更新', ''))
-        
         conn.commit()
         
-        # 读取数据库中的视频
+        # 从数据库读取所有视频
         cursor.execute('SELECT video_id FROM videos WHERE is_active = 1')
         videos = cursor.fetchall()
-    else:
-        # 从数据库读取
-        cursor.execute('SELECT video_id FROM videos WHERE is_active = 1')
-        videos = cursor.fetchall()
+
+    if not videos:
+        print("⚠️ 暂无活跃视频，请先在 videos.txt 中添加视频地址")
+        conn.close()
+        return
+
+    print(f"✅ 找到 {len(videos)} 个活跃视频")
+    print()
 
     # 更新每个视频的数据
     update_time = datetime.now()
