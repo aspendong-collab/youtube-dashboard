@@ -1,8 +1,0 @@
-# YouTube 视频监控列表
-# 每行一个视频地址，支持以下格式：
-# - 完整 URL: https://www.youtube.com/watch?v=xxxxxxxxxxx
-# - 短链接: https://youtu.be/xxxxxxxxxxx
-# - 直接视频 ID: xxxxxxxxxxx
-
-# 示例视频（请替换为你要监控的视频）
-# https://www.youtube.com/watch?v=dQw4w9WgXcQ

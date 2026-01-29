@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-YouTube Dashboard - Streamlit 可视化看板
-你的唯一操作入口
+YouTube Analytics Dashboard - 优化版本
+融合 Adjust + Apple 设计风格
 """
 
 import streamlit as st
@@ -9,1191 +9,681 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import sqlite3
-import re
-from datetime import datetime, timedelta
-from pathlib import Path
 from collections import Counter
 import os
-import tempfile
-import requests
+
+# 导入自定义模块
+from ui import (
+    render_sidebar,
+    get_current_page,
+    set_current_page,
+    render_metric_card,
+    render_info_box,
+    render_warning_box,
+    render_success_box,
+    render_chart_container,
+    render_section_title,
+    render_empty_state,
+    render_separator,
+)
+from database import (
+    init_database,
+    get_videos,
+    get_video_info,
+    get_latest_stats,
+    get_video_stats_history,
+    get_comments,
+    get_all_tags,
+    get_unread_alerts,
+    mark_alert_as_read,
+    add_video,
+    save_video_stats,
+    save_comment,
+    save_tags,
+)
+from api import YouTubeAPI, extract_video_id
+from analytics import (
+    analyze_video_performance,
+    create_performance_chart,
+    create_comparison_chart,
+    generate_optimization_suggestions,
+    generate_word_cloud,
+    analyze_comment_sentiment,
+    get_top_commenters,
+    get_most_liked_comments,
+)
+from utils import (
+    format_number,
+    format_percentage,
+    calculate_engagement_rate,
+    format_duration,
+    parse_duration,
+    get_video_age,
+    truncate_text,
+)
+from config import Config, set_api_key
 
 # 配置页面
 st.set_page_config(
-    page_title="YouTube 数据监控看板",
+    page_title="YouTube Analytics Dashboard",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# 自定义 CSS
-st.markdown("""
-<style>
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 10px;
-        color: white;
-        margin: 10px 0;
-    }
-    .success-box {
-        background-color: #d4edda;
-        border-left: 5px solid #28a745;
-        padding: 15px;
-        border-radius: 5px;
-        margin: 10px 0;
-    }
-    .alert-box {
-        background-color: #fff3cd;
-        border-left: 5px solid #ffc107;
-        padding: 15px;
-        border-radius: 5px;
-        margin: 10px 0;
-    }
-</style>
-""", unsafe_allow_html=True)
+# 初始化数据库
+init_database()
 
+# 初始化 session state
+if "api_key" not in st.session_state:
+    st.session_state.api_key = Config.get_api_key()
+if "selected_videos" not in st.session_state:
+    st.session_state.selected_videos = []
 
-# ==================== YouTube API 函数 ====================
 
-def fetch_video_data_direct(video_ids):
-    """直接从 YouTube API 获取视频数据
-    
-    参数:
-        video_ids: 视频ID列表
-    
-    返回:
-        视频数据字典 {video_id: {title, channel_title, view_count, like_count, comment_count}}
-    """
-    # 从 Streamlit Secrets 获取 API Key
-    try:
-        api_key = st.secrets["YOUTUBE_API_KEY"]
-    except KeyError:
-        st.error("❌ 未配置 YouTube API Key")
-        st.info("💡 请在 Streamlit Cloud 的 Settings → Secrets 中添加 YOUTUBE_API_KEY")
-        return None
-    
-    if not video_ids:
-        return {}
-    
-    # 批量获取视频数据（最多50个）
-    video_ids_str = ','.join(video_ids[:50])
-    url = f"https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id={video_ids_str}&key={api_key}"
-    
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        
-        if 'items' not in data:
-            st.warning("⚠️ 未找到视频数据，请检查视频ID是否正确")
-            return {}
-        
-        video_data = {}
-        for item in data['items']:
-            video_id = item['id']
-            snippet = item.get('snippet', {})
-            statistics = item.get('statistics', {})
-            
-            video_data[video_id] = {
-                'title': snippet.get('title', '未知标题'),
-                'channel_title': snippet.get('channelTitle', '未知频道'),
-                'view_count': int(statistics.get('viewCount', 0)),
-                'like_count': int(statistics.get('likeCount', 0)),
-                'comment_count': int(statistics.get('commentCount', 0)),
-                'published_at': snippet.get('publishedAt', ''),
-            }
-        
-        return video_data
-        
-    except requests.exceptions.RequestException as e:
-        st.error(f"❌ 获取数据失败: {e}")
-        return None
-    except Exception as e:
-        st.error(f"❌ 解析数据失败: {e}")
-        return None
-
-
-def save_video_stats_direct(conn, video_data):
-    """直接保存视频统计数据到数据库
-    
-    参数:
-        conn: 数据库连接
-        video_data: fetch_video_data_direct() 返回的视频数据
-    """
-    if not video_data:
-        return
-    
-    cursor = conn.cursor()
-    current_date = datetime.now().strftime('%Y-%m-%d')
-    current_time = datetime.now()
-    
-    for video_id, data in video_data.items():
-        # 更新视频基本信息
-        cursor.execute('''
-            INSERT OR REPLACE INTO videos (video_id, title, channel_title, is_active)
-            VALUES (?, ?, ?, 1)
-        ''', (video_id, data['title'], data['channel_title']))
-        
-        # 计算互动率
-        view_count = data['view_count']
-        if view_count > 0:
-            engagement_rate = (data['like_count'] + data['comment_count']) / view_count * 100
-        else:
-            engagement_rate = 0.0
-        
-        # 插入统计数据
-        cursor.execute('''
-            INSERT OR REPLACE INTO video_stats 
-            (video_id, date, view_count, like_count, comment_count, engagement_rate, fetch_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (video_id, current_date, view_count, data['like_count'], 
-              data['comment_count'], engagement_rate, current_time))
-    
-    conn.commit()
-
-
-# ==================== 数据库操作函数 ====================
-
-def get_db_path():
-    """获取数据库路径"""
-    # 统一使用当前工作目录的数据库
-    # GitHub Actions 和 Streamlit Cloud 都会在各自的目录运行
-    return Path('youtube_dashboard.db')
-
-
-def get_connection():
-    """获取数据库连接"""
-    db_path = get_db_path()
-    
-    # 初始化数据库（如果不存在）
-    if not db_path.exists():
-        init_database(str(db_path))
-    
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def init_database(db_path=None):
-    """初始化数据库"""
-    if db_path is None:
-        conn = sqlite3.connect('youtube_dashboard.db')
-    else:
-        conn = sqlite3.connect(db_path)
-    
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS videos (
-            video_id TEXT PRIMARY KEY,
-            title TEXT,
-            channel_title TEXT,
-            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            is_active INTEGER DEFAULT 1
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS video_stats (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            video_id TEXT,
-            date DATE,
-            view_count INTEGER DEFAULT 0,
-            like_count INTEGER DEFAULT 0,
-            comment_count INTEGER DEFAULT 0,
-            engagement_rate REAL DEFAULT 0,
-            fetch_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (video_id) REFERENCES videos(video_id)
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS video_comments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            video_id TEXT,
-            comment_text TEXT,
-            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (video_id) REFERENCES videos(video_id)
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS alerts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            video_id TEXT,
-            alert_type TEXT,
-            current_value INTEGER,
-            message TEXT,
-            sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (video_id) REFERENCES videos(video_id)
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
-
-
-def extract_video_id(url_or_id):
-    """从 URL 或 ID 中提取 video_id"""
-    if re.match(r'^[a-zA-Z0-9_-]{11}$', url_or_id):
-        return url_or_id
-
-    patterns = [
-        r'(?:v=|/)([0-9A-Za-z_-]{11}).*',
-        r'(?:embed/)([0-9A-Za-z_-]{11})',
-        r'(?:v/)([0-9A-Za-z_-]{11})',
-        r'(?:youtu\.be/)([0-9A-Za-z_-]{11})'
-    ]
-
-    for pattern in patterns:
-        match = re.search(pattern, url_or_id)
-        if match:
-            return match.group(1)
-
-    return None
-
-
-def get_all_videos(conn):
-    """获取所有监控的视频"""
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT video_id, title, channel_title, added_at, is_active
-        FROM videos
-        ORDER BY added_at DESC
-    ''')
-    return cursor.fetchall()
-
-def save_video_ids_to_github(video_ids):
-    """保存视频ID到GitHub文件，触发自动获取"""
-    try:
-        # 读取现有视频
-        videos_file = Path('videos.txt')
-        existing_videos = []
-        if videos_file.exists():
-            with open(videos_file, 'r') as f:
-                existing_videos = [line.strip() for line in f.readlines() if line.strip()]
-        
-        # 添加新视频（去重）
-        new_videos = []
-        for vid in video_ids:
-            if vid not in existing_videos:
-                new_videos.append(vid)
-        
-        if new_videos:
-            # 追加到文件
-            with open(videos_file, 'a') as f:
-                for vid in new_videos:
-                    f.write(f"{vid}\n")
-            
-            # Streamlit Cloud 环境下无法直接提交到GitHub
-            # 用户需要手动推送或在 GitHub 仓库中更新 videos.txt
-            st.warning("⚠️ 视频已保存到本地 videos.txt")
-            st.info("💡 请手动将 videos.txt 提交到 GitHub 仓库")
-            st.info("📝 或访问 GitHub Actions 页面手动触发数据更新")
-            st.markdown("🔗 [GitHub Actions](https://github.com/aspendong-collab/youtube-dashboard/actions)")
-    except Exception as e:
-        st.error(f"❌ 保存视频失败: {e}")
-
-
-def load_videos_from_github():
-    """从GitHub数据库加载视频列表"""
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT video_id, title, channel_title, added_at, is_active FROM videos ORDER BY added_at DESC')
-        videos = [dict(row) for row in cursor.fetchall()]
-        conn.close()
-        return videos
-    except Exception as e:
-        st.error(f"❌ 加载视频列表失败: {e}")
-        return []
-
-
-def trigger_github_action():
-    """触发GitHub Actions更新"""
-    try:
-        import requests
-        # GitHub Actions 触发URL（需要配置token）
-        st.info("📊 请手动访问 GitHub Actions 页面触发更新")
-        st.markdown("""
-        🔗 [点击这里触发更新](https://github.com/aspendong-collab/youtube-dashboard/actions)
-        """)
-    except Exception as e:
-        st.error(f"❌ 无法自动触发: {e}")
-
-def add_videos_direct(conn, video_urls):
-    """批量添加视频并实时获取数据
-    
-    参数:
-        conn: 数据库连接
-        video_urls: 视频URL列表
-    
-    返回:
-        成功添加的视频数量
-    """
-    # 提取所有视频ID
-    video_ids = []
-    for url in video_urls:
-        url = url.strip()
-        if not url:
-            continue
-        video_id = extract_video_id(url)
-        if video_id:
-            video_ids.append(video_id)
-    
-    if not video_ids:
-        return 0
-    
-    # 实时获取视频数据
-    st.info("⏳ 正在从 YouTube 获取视频数据...")
-    video_data = fetch_video_data_direct(video_ids)
-    
-    if video_data is None:
-        return 0
-    
-    if not video_data:
-        return 0
-    
-    # 保存到数据库
-    save_video_stats_direct(conn, video_data)
-    
-    return len(video_data)
-
-
-def add_videos(conn, video_urls):
-    """批量添加视频（保留兼容性）"""
-    cursor = conn.cursor()
-    added_count = 0
-
-    for url in video_urls:
-        url = url.strip()
-        if not url:
-            continue
-
-        video_id = extract_video_id(url)
-        if not video_id:
-            continue
-
-        try:
-            cursor.execute('''
-                INSERT OR IGNORE INTO videos (video_id, title, channel_title)
-                VALUES (?, ?, ?)
-            ''', (video_id, '待更新', ''))
-            if cursor.rowcount > 0:
-                added_count += 1
-        except Exception as e:
-            st.error(f"添加失败 {url}: {e}")
-
-    conn.commit()
-    return added_count
-
-
-def get_overall_stats(conn):
-    """获取整体统计数据"""
-    cursor = conn.cursor()
-
-    # 获取所有视频的最新数据
-    cursor.execute('''
-        WITH latest_stats AS (
-            SELECT video_id,
-                   MAX(date) as latest_date
-            FROM video_stats
-            GROUP BY video_id
-        )
-        SELECT
-            COUNT(DISTINCT vs.video_id) as total_videos,
-            SUM(vs.view_count) as total_views,
-            AVG(vs.engagement_rate) as avg_engagement_rate,
-            SUM(vs.like_count) as total_likes,
-            SUM(vs.comment_count) as total_comments
-        FROM video_stats vs
-        JOIN latest_stats ls ON vs.video_id = ls.video_id AND vs.date = ls.latest_date
-        JOIN videos v ON v.video_id = vs.video_id AND v.is_active = 1
-    ''')
-
-    return cursor.fetchone()
-
-
-def get_daily_overall_trend(conn, days=30):
-    """获取每日整体趋势"""
-    cursor = conn.cursor()
-
-    query = f'''
-        SELECT
-            date,
-            SUM(view_count) as total_views,
-            AVG(engagement_rate) as avg_engagement_rate,
-            COUNT(DISTINCT video_id) as video_count
-        FROM video_stats
-        WHERE date >= date('now', '-{days} days')
-        GROUP BY date
-        ORDER BY date
-    '''
-
-    df = pd.read_sql_query(query, conn)
-    return df
-
-
-def get_video_stats(conn, video_id):
-    """获取单个视频的数据"""
-    cursor = conn.cursor()
-
-    cursor.execute('''
-        SELECT * FROM videos WHERE video_id = ?
-    ''', (video_id,))
-    video_info = cursor.fetchone()
-
-    cursor.execute('''
-        SELECT * FROM video_stats
-        WHERE video_id = ?
-        ORDER BY date DESC
-        LIMIT 30
-    ''', (video_id,))
-    stats = cursor.fetchall()
-
-    return video_info, stats
-
-
-def get_video_comments(conn, video_id, limit=100):
-    """从数据库获取视频评论"""
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT comment_text FROM video_comments
-        WHERE video_id = ?
-        ORDER BY fetched_at DESC
-        LIMIT ?
-    ''', (video_id, limit))
-
-    comments = [row['comment_text'] for row in cursor.fetchall()]
-    return comments
-
-
-def get_alerts(conn, days=7):
-    """获取预警记录"""
-    cursor = conn.cursor()
-
-    query = f'''
-        SELECT * FROM alerts
-        WHERE sent_at >= datetime('now', '-{days} days')
-        ORDER BY sent_at DESC
-        LIMIT 50
-    '''
-
-    df = pd.read_sql_query(query, conn)
-    return df
-
-
-def generate_word_cloud(comments):
-    """生成词云数据
-    
-    参数:
-        comments: 评论列表，每个元素应为字符串
-    
-    返回:
-        词频列表 [(word, count), ...] 或 None
-    """
-    # 防御性检查：确保输入是列表
-    if not isinstance(comments, (list, tuple)):
-        return None
-    
-    if not comments:
-        return None
-
-    # 简单的中文分词（按空格和标点符号分割）
-    import re
-
-    all_words = []
-    for comment in comments:
-        # 确保每个元素是字符串类型
-        if not isinstance(comment, str):
-            continue
-        
-        # 提取中文和英文单词
-        words = re.findall(r'[\u4e00-\u9fa5]+|[a-zA-Z]+', comment)
-        all_words.extend(words)
-
-    if not all_words:
-        return None
-
-    # 统计词频
-    word_counts = Counter(all_words)
-
-    # 过滤掉常见词
-    stop_words = {'的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这'}
-
-    # 从 Counter 对象中过滤停用词
-    for word in list(word_counts.keys()):
-        if len(word) <= 1 or word in stop_words:
-            del word_counts[word]
-
-    # 确保word_counts仍然是Counter对象（防御性检查）
-    if not isinstance(word_counts, Counter):
-        word_counts = Counter(word_counts)
-
-    # 取前 50 个高频词
-    top_words = word_counts.most_common(50)
-
-    return top_words
-
-
-# ==================== 页面渲染函数 ====================
-
-def render_video_management(conn):
-    """渲染视频管理页面"""
-    st.header("📹 视频管理")
-
-    col1, col2 = st.columns([2, 1])
-
-    with col1:
-        st.subheader("添加新视频")
-        st.markdown("""
-        <div class="success-box">
-            💡 <b>提示：</b>每行输入一个 YouTube 视频地址，添加后会自动获取视频标题和数据
-        </div>
-        """, unsafe_allow_html=True)
-
-        video_urls = st.text_area(
-            "视频地址列表",
-            height=200,
-            placeholder="https://www.youtube.com/watch?v=xxx\nhttps://www.youtube.com/watch?v=yyy"
-        )
-
-        col_btn1 = st.columns(1)[0]
-
-        with col_btn1:
-            if st.button("➕ 添加视频", type="primary"):
-                if video_urls:
-                    # 使用实时获取数据的新函数
-                    urls = video_urls.split('\n')
-                    added_count = add_videos_direct(conn, urls)
-                    
-                    if added_count > 0:
-                        st.success(f"✅ 成功添加 {added_count} 个视频并获取数据！")
-                        st.info("💡 数据已实时获取，可以立即在\"单个视频\"页面查看")
-                        # 自动刷新页面以显示新数据
-                        st.rerun()
-                    else:
-                        st.warning("⚠️ 没有有效的视频地址或获取数据失败")
-                else:
-                    st.warning("⚠️ 请输入视频地址")
-
-    with col2:
-        st.subheader("操作指南")
-        st.markdown("""
-        **添加视频步骤：**
-        1. ✅ 在左侧输入框粘贴视频地址（每行一个）
-        2. ✅ 点击"添加视频"按钮
-        3. ✅ **实时获取数据**（1-2秒内完成）
-        4. ✅ 页面自动刷新
-        5. ✅ 立即查看数据分析结果
-
-        **支持格式：**
-        - `https://www.youtube.com/watch?v=xxx`
-        - `https://youtu.be/xxx`
-        - 直接输入 `xxx`（11位ID）
-
-        **数据更新：**
-        - 🚀 **实时获取**：添加视频时立即获取
-        - ⏰ 定时更新：每日自动 9:00, 12:00, 18:00（北京时间）
-        - 🔄 手动更新：点击下方按钮
-        
-        **注意事项：**
-        - 需要配置 YouTube API Key（Streamlit Secrets）
-        - 免费 API 配额：每日 10,000 单位
-        - 单次获取 1 个视频约消耗 1 单位
-        """)
-
-    st.divider()
-
-    # 手动更新按钮
-    st.subheader("手动更新数据")
-    col_update = st.columns(1)[0]
-    with col_update:
-        if st.button("🔄 立即更新所有视频数据"):
-            st.info("⏰ 正在触发 GitHub Actions 获取数据...")
-            trigger_github_action()
-            st.success("✅ 已触发更新！请等待 1-3 分钟后刷新页面")
-            st.markdown("""
-            **查看获取进度：**
-            📊 [GitHub Actions](https://github.com/aspendong-collab/youtube-dashboard/actions)
-            """)
-
-    st.divider()
-
-    st.subheader("📋 监控视频列表")
-
-    # 从 GitHub 文件读取视频列表
-    videos = load_videos_from_github()
-
-    if not videos:
-        st.info("📭 暂无监控视频，请添加视频地址")
-        return
-
-    # 视频列表
-    video_data = []
-    for v in videos:
-        video_data.append({
-            'Video ID': v['video_id'],
-            '标题': v.get('title', '待更新'),
-            '频道': v.get('channel_title', '-'),
-            '添加时间': v.get('added_at', '-'),
-            '状态': '✅ 活跃' if v.get('is_active', 1) else '❌ 停用'
-        })
-
-    df_videos = pd.DataFrame(video_data)
-
-    # 显示表格
-    st.dataframe(
-        df_videos,
-        use_container_width=True,
-        column_config={
-            'Video ID': st.column_config.TextColumn('Video ID', width='small'),
-            '标题': st.column_config.TextColumn('标题'),
-            '频道': st.column_config.TextColumn('频道', width='medium'),
-            '添加时间': st.column_config.TextColumn('添加时间', width='medium'),
-            '状态': st.column_config.TextColumn('状态', width='small')
-        }
-    )
-
-    st.markdown(f"📊 共有 **{len(videos)}** 个视频正在监控")
-
-def render_overall_dashboard(conn):
-    """渲染整体数据看板"""
-    st.header("📊 整体数据看板")
-
-    # 获取统计数据
-    stats = get_overall_stats(conn)
-
-    if not stats or stats['total_videos'] == 0:
-        st.warning("⚠️ 暂无数据，请先添加视频并等待 GitHub Actions 更新数据")
-        st.info("💡 提示：添加视频后，访问 GitHub Actions 手动触发更新，等待 1-3 分钟后刷新页面")
-        return
-
-    # KPI 卡片
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.metric(
-            label="📹 监控视频数",
-            value=f"{stats['total_videos']:,}"
-        )
-
-    with col2:
-        st.metric(
-            label="👀 总播放量",
-            value=f"{stats['total_views']:,}",
-            delta="累计"
-        )
-
-    with col3:
-        st.metric(
-            label="💖 总点赞数",
-            value=f"{stats['total_likes']:,}"
-        )
-
-    with col4:
-        st.metric(
-            label="💬 总评论数",
-            value=f"{stats['total_comments']:,}"
-        )
-
-    st.divider()
-
-    # 趋势图
-    trend_df = get_daily_overall_trend(conn, days=30)
-
-    if trend_df.empty:
-        st.warning("⚠️ 暂无历史数据")
-        st.info("💡 提示：新添加的视频会在首次数据更新时自动模拟 30 天的历史数据")
-        return
-
-    # 播放量趋势
-    fig_views = px.line(
-        trend_df,
-        x='date',
-        y='total_views',
-        title='📈 总播放量趋势（近30天）',
-        markers=True,
-        template='plotly_white'
-    )
-    fig_views.update_layout(
-        xaxis_title='日期',
-        yaxis_title='播放量',
-        hovermode='x unified'
-    )
-    st.plotly_chart(fig_views, use_container_width=True)
-
-    # 互动率趋势
-    col1, col2 = st.columns(2)
-
-    with col1:
-        fig_engagement = px.line(
-            trend_df,
-            x='date',
-            y='avg_engagement_rate',
-            title='📊 平均互动率变化（近30天）',
-            markers=True,
-            template='plotly_white'
-        )
-        fig_engagement.update_layout(
-            xaxis_title='日期',
-            yaxis_title='互动率 (%)',
-            hovermode='x unified'
-        )
-        st.plotly_chart(fig_engagement, use_container_width=True)
-
-    with col2:
-        fig_count = px.bar(
-            trend_df,
-            x='date',
-            y='video_count',
-            title='📹 监控视频数量变化',
-            template='plotly_white'
-        )
-        fig_count.update_layout(
-            xaxis_title='日期',
-            yaxis_title='视频数量'
-        )
-        st.plotly_chart(fig_count, use_container_width=True)
-
-
-def render_video_detail_dashboard(conn):
-    """渲染单个视频看板"""
-    st.header("📹 单个视频看板")
-
-    # 获取所有视频
-    videos = get_all_videos(conn)
-
-    if not videos:
-        st.warning("⚠️ 暂无监控视频")
-        return
-
-    # 视频选择
-    video_options = {f"{v['title'] or '待更新'} ({v['video_id']})": v['video_id'] for v in videos}
-    selected_option = st.selectbox("选择视频", list(video_options.keys()))
-    video_id = video_options[selected_option]
-
-    # 获取视频数据
-    video_info, stats = get_video_stats(conn, video_id)
-
-    if not stats:
-        st.warning(f"⚠️ 视频 {video_id} 暂无数据")
-        st.info("💡 提示：新添加的视频会在首次数据更新时自动模拟 30 天的历史数据")
-        return
-
-    # 视频信息
-    st.subheader(f"📺 {video_info['title']}")
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.info(f"**频道**: {video_info['channel_title'] or '待更新'}")
-
-    with col2:
-        st.info(f"**添加时间**: {video_info['added_at']}")
-
-    with col3:
-        st.info(f"**数据记录**: {len(stats)} 条")
-
-    # 最新数据 KPI
-    latest = stats[0]
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.metric(
-            label="👀 播放量",
-            value=f"{latest['view_count']:,}"
-        )
-
-    with col2:
-        st.metric(
-            label="💖 点赞数",
-            value=f"{latest['like_count']:,}"
-        )
-
-    with col3:
-        st.metric(
-            label="💬 评论数",
-            value=f"{latest['comment_count']:,}"
-        )
-
-    with col4:
-        st.metric(
-            label="📊 互动率",
-            value=f"{latest['engagement_rate']:.2f}%"
-        )
-    with col4:
-        st.metric(
-            label="📊 互动率",
-            value=f"{latest['engagement_rate']:.2f}%"
-        )
-
-    st.divider()
-
-    # 转换为 DataFrame（确保包含 date 列）
-    df_stats = pd.DataFrame([dict(row) for row in stats])
-    
-    # 检查是否有 date 列
-    if 'date' not in df_stats.columns:
-        st.error("❌ 数据格式错误：缺少 date 列")
-        return
-
-    # 播放量趋势
-    fig_views = px.line(
-        df_stats.sort_values('date'),
-        x='date',
-        y='view_count',
-        title='📈 播放量趋势',
-        markers=True,
-        template='plotly_white'
-    )
-    fig_views.update_layout(
-        xaxis_title='日期',
-        yaxis_title='播放量',
-        hovermode='x unified'
-    )
-    st.plotly_chart(fig_views, use_container_width=True)
-
-    # 互动数据
-    col1, col2 = st.columns(2)
-
-    with col1:
-        fig_interactions = go.Figure()
-        fig_interactions.add_trace(go.Scatter(
-            x=df_stats['date'],
-            y=df_stats['like_count'],
-            mode='lines+markers',
-            name='点赞数',
-            line=dict(color='#FF6B6B')
-        ))
-        fig_interactions.add_trace(go.Scatter(
-            x=df_stats['date'],
-            y=df_stats['comment_count'],
-            mode='lines+markers',
-            name='评论数',
-            line=dict(color='#4ECDC4')
-        ))
-        fig_interactions.update_layout(
-            title='💖 互动数据趋势',
-            xaxis_title='日期',
-            yaxis_title='数量',
-            template='plotly_white',
-            hovermode='x unified'
-        )
-        st.plotly_chart(fig_interactions, use_container_width=True)
-
-    with col2:
-        fig_rates = go.Figure()
-        fig_rates.add_trace(go.Bar(
-            x=df_stats['date'],
-            y=df_stats['engagement_rate'],
-            name='互动率',
-            marker_color='#95E1D3'
-        ))
-        fig_rates.update_layout(
-            title='📊 互动率变化',
-            xaxis_title='日期',
-            yaxis_title='互动率 (%)',
-            template='plotly_white'
-        )
-        st.plotly_chart(fig_rates, use_container_width=True)
-
-    # 评论词云
-    st.divider()
-    st.subheader("💬 评论词云")
-
-    # 获取评论
-    comments = get_video_comments(conn, video_id)
-
-    if comments:
-        # 生成词云数据
-        word_cloud_data = generate_word_cloud(comments)
-
-        if word_cloud_data:
-            # 转换为 DataFrame
-            df_words = pd.DataFrame(word_cloud_data, columns=['词语', '频次'])
-
-            # 显示词频表格
-            col1, col2 = st.columns([1, 2])
-
-            with col1:
-                st.markdown("#### 高频词语")
-                st.dataframe(
-                    df_words.head(20),
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-            with col2:
-                # 使用柱状图显示词频
-                fig_words = px.bar(
-                    df_words.head(20),
-                    x='频次',
-                    y='词语',
-                    orientation='h',
-                    title='📊 高频词语 Top 20',
-                    template='plotly_white',
-                    color='频次',
-                    color_continuous_scale='Blues'
-                )
-                fig_words.update_layout(
-                    yaxis={'categoryorder': 'total ascending'},
-                    height=500
-                )
-                st.plotly_chart(fig_words, use_container_width=True)
-
-            # 生成优化建议
-            st.divider()
-            st.subheader("💡 智能优化建议")
-
-            # 基于视频指标生成建议
-            suggestions = []
-
-            # 互动率分析
-            avg_rate = df_stats['engagement_rate'].mean()
-            latest_rate = df_stats['engagement_rate'].iloc[-1]
-
-            if latest_rate < avg_rate:
-                suggestions.append({
-                    '类型': '互动率下降',
-                    '建议': '近期互动率低于平均水平，建议在视频中增加提问互动环节，鼓励观众评论和点赞',
-                    '优先级': '🔴 高'
-                })
-            elif latest_rate < 3:
-                suggestions.append({
-                    '类型': '互动率偏低',
-                    '建议': '互动率持续偏低，考虑优化视频内容结构，在前30秒抓住观众注意力',
-                    '优先级': '🟡 中'
-                })
-
-            # 播放量趋势分析
-            view_growth = (df_stats['view_count'].iloc[-1] - df_stats['view_count'].iloc[0]) / df_stats['view_count'].iloc[0] * 100
-            if view_growth < 0:
-                suggestions.append({
-                    '类型': '播放量下降',
-                    '建议': '近期播放量出现下滑，建议分析热门评论，了解观众反馈并调整内容方向',
-                    '优先级': '🔴 高'
-                })
-            elif view_growth > 50:
-                suggestions.append({
-                    '类型': '播放量增长良好',
-                    '建议': '视频表现优秀，建议保持当前内容风格，并考虑制作系列视频以维持热度',
-                    '优先级': '🟢 低'
-                })
-
-            # 评论词云分析
-            positive_keywords = {'好', '棒', '喜欢', '爱', '优秀', '厉害', '赞', '美', '强', '牛'}
-            negative_keywords = {'差', '烂', '不好', '失望', '讨厌', '烦', '垃圾', '无聊'}
-
-            positive_count = sum(1 for word, _ in word_cloud_data if word in positive_keywords)
-            negative_count = sum(1 for word, _ in word_cloud_data if word in negative_keywords)
-
-            if negative_count > positive_count:
-                suggestions.append({
-                    '类型': '评论情感偏负面',
-                    '建议': f'高频词中出现较多负面词汇，建议关注评论区反馈，及时回应观众关切',
-                    '优先级': '🔴 高'
-                })
-            elif positive_count > negative_count * 2:
-                suggestions.append({
-                    '类型': '评论情感积极',
-                    '建议': '观众反馈积极，可以分享制作心得，增强与粉丝的互动',
-                    '优先级': '🟢 低'
-                })
-
-            # 评论数量分析
-            comment_growth = (df_stats['comment_count'].iloc[-1] - df_stats['comment_count'].iloc[0])
-            if comment_growth < 10:
-                suggestions.append({
-                    '类型': '评论增长缓慢',
-                    '建议': '评论数量增长较少，建议在视频结尾设置互动话题，引导观众发表看法',
-                    '优先级': '🟡 中'
-                })
-
-            # 显示建议
-            if suggestions:
-                df_suggestions = pd.DataFrame(suggestions)
-                df_suggestions = df_suggestions.sort_values('优先级', key=lambda x: x.map({'🔴 高': 0, '🟡 中': 1, '🟢 低': 2}))
-                st.dataframe(
-                    df_suggestions,
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.info("📊 当前数据表现稳定，暂无特别建议")
-        else:
-            st.info("📭 暂无足够的评论生成词云")
-    else:
-        st.info("📭 暂无评论数据，请等待数据更新")
-
-    # 数据表格
-    st.divider()
-    st.subheader("📋 历史数据明细")
-
-    df_display = df_stats[[
-        'date', 'view_count', 'like_count', 'comment_count',
-        'engagement_rate', 'fetch_time'
-    ]].copy()
-
-    df_display.columns = ['日期', '播放量', '点赞数', '评论数', '互动率', '更新时间']
-    df_display = df_display.sort_values('日期', ascending=False)
-
-    st.dataframe(
-        df_display,
-        use_container_width=True,
-        column_config={
-            '日期': st.column_config.DateColumn('日期'),
-            '播放量': st.column_config.NumberColumn('播放量', format='%d'),
-            '点赞数': st.column_config.NumberColumn('点赞数', format='%d'),
-            '评论数': st.column_config.NumberColumn('评论数', format='%d'),
-            '互动率': st.column_config.NumberColumn('互动率', format='%.2f'),
-            '更新时间': st.column_config.DatetimeColumn('更新时间', format='YYYY-MM-DD HH:mm')
-        }
-    )
-
-
-def render_alerts_dashboard(conn):
-    """渲染预警看板"""
-    st.header("🔥 爆款提醒记录")
-
-    # 预警统计
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT
-            alert_type,
-            COUNT(*) as count,
-            MAX(sent_at) as last_sent
-        FROM alerts
-        WHERE sent_at >= datetime('now', '-7 days')
-        GROUP BY alert_type
-        ORDER BY alert_type
-    ''')
-
-    alert_stats = cursor.fetchall()
-
-    if alert_stats:
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-            for stat in alert_stats:
-                if '10000' in stat['alert_type']:
-                    st.metric(
-                        label="🔥 增长1万（7天）",
-                        value=f"{stat['count']} 次"
-                    )
-
-        with col2:
-            for stat in alert_stats:
-                if '30000' in stat['alert_type']:
-                    st.metric(
-                        label="🔥 增长3万（7天）",
-                        value=f"{stat['count']} 次"
-                    )
-
-        with col3:
-            for stat in alert_stats:
-                if '50000' in stat['alert_type']:
-                    st.metric(
-                        label="🔥 增长5万（7天）",
-                        value=f"{stat['count']} 次"
-                    )
-
-        with col4:
-            for stat in alert_stats:
-                if '100k' in stat['alert_type']:
-                    st.metric(
-                        label="🔥 爆款10万（7天）",
-                        value=f"{stat['count']} 次"
-                    )
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            for stat in alert_stats:
-                if 'data_anomaly' in stat['alert_type']:
-                    st.metric(
-                        label="⚠️ 数据异常（7天）",
-                        value=f"{stat['count']} 次"
-                    )
-
-    st.divider()
-
-    # 预警记录
-    alerts_df = get_alerts(conn, days=30)
-
-    if alerts_df.empty:
-        st.info("📭 暂无预警记录")
-        return
-
-    st.subheader(f"📋 近30天预警记录 ({len(alerts_df)} 条）")
-
-    df_display = alerts_df[[
-        'sent_at', 'title', 'alert_type', 'current_value', 'message'
-    ]].copy()
-
-    df_display.columns = ['时间', '视频标题', '预警类型', '当前播放量', '消息']
-    df_display['预警类型'] = df_display['预警类型'].map({
-        'growth_10000': '🔥 增长1万',
-        'growth_30000': '🔥 增长3万',
-        'growth_50000': '🔥 增长5万',
-        '100k': '🔥 爆款10万',
-        'data_anomaly': '⚠️ 数据异常'
-    })
-
-    st.dataframe(
-        df_display,
-        use_container_width=True,
-        column_config={
-            '时间': st.column_config.DatetimeColumn('时间', format='YYYY-MM-DD HH:mm'),
-            '视频标题': st.column_config.TextColumn('视频标题'),
-            '预警类型': st.column_config.TextColumn('预警类型'),
-            '当前播放量': st.column_config.NumberColumn('当前播放量', format='%d'),
-            '消息': st.column_config.TextColumn('消息')
-        }
-    )
-
-
-# ==================== 主程序 ====================
+# ==================== 主应用 ====================
 
 def main():
     """主函数"""
-    # 连接数据库
-    conn = get_connection()
+    
+    # 渲染侧边栏
+    current_page = render_sidebar()
+    
+    # 应用全局样式
+    st.markdown("""
+    <style>
+    .stApp {
+        background: linear-gradient(135deg, #0a0e27 0%, #16213e 100%);
+        color: #ffffff;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # 根据当前页面路由
+    if current_page == "video_management":
+        render_video_management()
+    elif current_page == "overall_dashboard":
+        render_overall_dashboard()
+    elif current_page == "video_detail":
+        render_video_detail()
+    elif current_page == "alerts":
+        render_alerts()
+    elif current_page == "seo_analysis":
+        render_seo_analysis()
+    elif current_page == "duration_analysis":
+        render_duration_analysis()
+    elif current_page == "publish_time":
+        render_publish_time_analysis()
+    elif current_page == "tags_analysis":
+        render_tags_analysis()
+    elif current_page == "sentiment_analysis":
+        render_sentiment_analysis()
+    elif current_page == "user_profile":
+        render_user_profile()
+    elif current_page == "comment_analysis":
+        render_comment_analysis()
+    elif current_page == "api_settings":
+        render_api_settings()
+    elif current_page == "data_source":
+        render_data_source()
+    else:
+        render_video_management()
 
-    # 侧边栏
-    with st.sidebar:
-        st.title("📊 YouTube Dashboard")
-        st.markdown("---")
 
-        page = st.radio(
-            "选择页面",
-            ["📹 视频管理", "📊 整体看板", "📹 单个视频", "🔥 爆款提醒"],
-            label_visibility="collapsed"
+# ==================== 视频管理页面 ====================
+
+def render_video_management():
+    """渲染视频管理页面"""
+    
+    st.title("📹 视频管理")
+    render_section_title("添加新视频", "通过 YouTube URL 或视频 ID 添加视频到监控系统")
+    
+    # 输入框
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        video_input = st.text_input(
+            "YouTube URL 或视频 ID",
+            placeholder="例如: https://www.youtube.com/watch?v=dQw4w9WgXcQ 或 dQw4w9WgXcQ",
+            help="支持 YouTube 视频 URL 或 11 位视频 ID"
         )
+    
+    with col2:
+        st.write("")
+        st.write("")
+        add_button = st.button("添加视频", type="primary", use_container_width=True)
+    
+    # 批量添加
+    st.markdown("---")
+    render_section_title("批量添加视频", "支持通过文本文件批量添加多个视频")
+    
+    uploaded_file = st.file_uploader(
+        "上传视频列表文件",
+        type=["txt"],
+        help="每行一个 YouTube URL 或视频 ID"
+    )
+    
+    if uploaded_file:
+        content = uploaded_file.read().decode("utf-8")
+        video_lines = [line.strip() for line in content.split("\n") if line.strip()]
+        
+        st.write(f"检测到 {len(video_lines)} 个视频:")
+        st.dataframe(pd.DataFrame({"视频列表": video_lines}))
+        
+        if st.button("批量添加", type="primary"):
+            with st.spinner(f"正在添加 {len(video_lines)} 个视频..."):
+                api = YouTubeAPI(st.session_state.api_key)
+                success_count = 0
+                
+                for line in video_lines:
+                    video_id = extract_video_id(line)
+                    if video_id:
+                        try:
+                            # 获取视频信息
+                            videos = api.get_video_info([video_id])
+                            if videos:
+                                video_data = videos[0]
+                                
+                                # 保存视频信息
+                                add_video(video_data)
+                                
+                                # 保存统计数据
+                                stats = {
+                                    "view_count": video_data.get("view_count", 0),
+                                    "like_count": video_data.get("like_count", 0),
+                                    "comment_count": video_data.get("comment_count", 0),
+                                    "favorite_count": video_data.get("favorite_count", 0)
+                                }
+                                save_video_stats(video_id, stats)
+                                
+                                # 保存标签
+                                tags = video_data.get("tags", [])
+                                if tags:
+                                    save_tags(video_id, tags)
+                                
+                                success_count += 1
+                        except Exception as e:
+                            st.warning(f"添加视频 {video_id} 失败: {str(e)}")
+                
+                render_success_box("批量添加完成", f"成功添加 {success_count} 个视频，失败 {len(video_lines) - success_count} 个")
+    
+    # 处理单个添加
+    if add_button and video_input:
+        with st.spinner("正在获取视频信息..."):
+            video_id = extract_video_id(video_input)
+            
+            if not video_id:
+                render_error_box("无效的视频 URL", "请输入有效的 YouTube 视频 URL 或 11 位视频 ID")
+            else:
+                api = YouTubeAPI(st.session_state.api_key)
+                videos = api.get_video_info([video_id])
+                
+                if videos:
+                    video_data = videos[0]
+                    
+                    # 保存视频信息
+                    add_video(video_data)
+                    
+                    # 保存统计数据
+                    stats = {
+                        "view_count": video_data.get("view_count", 0),
+                        "like_count": video_data.get("like_count", 0),
+                        "comment_count": video_data.get("comment_count", 0),
+                        "favorite_count": video_data.get("favorite_count", 0)
+                    }
+                    save_video_stats(video_id, stats)
+                    
+                    # 保存标签
+                    tags = video_data.get("tags", [])
+                    if tags:
+                        save_tags(video_id, tags)
+                    
+                    render_success_box("添加成功", f"已添加视频: {truncate_text(video_data['title'], 50)}")
+                else:
+                    render_error_box("获取失败", "无法获取视频信息，请检查 API 密钥和网络连接")
+    
+    # 显示已添加的视频
+    render_separator("已监控视频")
+    
+    videos = get_videos()
+    
+    if not videos:
+        render_empty_state("暂无监控视频，请先添加视频", icon="📹")
+    else:
+        # 准备数据
+        video_list = []
+        for video in videos:
+            video_list.append({
+                "视频标题": video[1],
+                "频道": video[2],
+                "观看量": format_number(video[4] or 0),
+                "点赞量": format_number(video[5] or 0),
+                "评论量": format_number(video[6] or 0),
+                "发布时间": get_video_age(video[3]) if video[3] else "未知"
+            })
+        
+        df = pd.DataFrame(video_list)
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
-        st.markdown("---")
-        st.markdown("""
-        **使用说明：**
-        1. 在"视频管理"添加视频地址
-        2. 访问 GitHub Actions 手动触发更新
-        3. 等待 1-3 分钟后刷新页面
-        4. 查看"整体看板"和"单个视频"
-        5. 关注"爆款提醒"通知
-        """)
 
-    # 根据选择渲染页面
-    if page == "📹 视频管理":
-        render_video_management(conn)
-    elif page == "📊 整体看板":
-        render_overall_dashboard(conn)
-    elif page == "📹 单个视频":
-        render_video_detail_dashboard(conn)
-    elif page == "🔥 爆款提醒":
-        render_alerts_dashboard(conn)
+# ==================== 整体看板页面 ====================
 
-    # 关闭连接
-    conn.close()
+def render_overall_dashboard():
+    """渲染整体看板页面"""
+    
+    st.title("📊 整体数据看板")
+    
+    videos = get_videos()
+    
+    if not videos:
+        render_empty_state("暂无监控视频，请先添加视频", icon="📊")
+        return
+    
+    # 计算总体数据
+    total_views = sum([video[4] or 0 for video in videos])
+    total_likes = sum([video[5] or 0 for video in videos])
+    total_comments = sum([video[6] or 0 for video in videos])
+    
+    # 渲染指标卡片
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        render_metric_card("总观看量", format_number(total_views))
+    
+    with col2:
+        render_metric_card("总点赞量", format_number(total_likes))
+    
+    with col3:
+        render_metric_card("总评论量", format_number(total_comments))
+    
+    # 视频排行
+    render_separator("热门视频排行")
+    
+    video_list = []
+    for video in videos:
+        engagement_rate = calculate_engagement_rate(
+            video[5] or 0,
+            video[6] or 0,
+            video[4] or 0
+        )
+        video_list.append({
+            "视频标题": video[1],
+            "观看量": video[4] or 0,
+            "点赞量": video[5] or 0,
+            "评论量": video[6] or 0,
+            "互动率": engagement_rate
+        })
+    
+    df = pd.DataFrame(video_list)
+    df_sorted = df.sort_values("观看量", ascending=False).head(10)
+    
+    # 创建对比图表
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        fig = px.bar(
+            df_sorted,
+            x="观看量",
+            y="视频标题",
+            orientation="h",
+            title="观看量 Top 10",
+            color="观看量",
+            color_continuous_scale="viridis"
+        )
+        fig.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#ffffff"),
+            height=500
+        )
+        render_chart_container("观看量排行", fig)
+    
+    with col2:
+        fig = px.bar(
+            df_sorted,
+            x="互动率",
+            y="视频标题",
+            orientation="h",
+            title="互动率 Top 10",
+            color="互动率",
+            color_continuous_scale="viridis"
+        )
+        fig.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#ffffff"),
+            height=500
+        )
+        render_chart_container("互动率排行", fig)
 
 
-if __name__ == '__main__':
+# ==================== 单个视频详情页面 ====================
+
+def render_video_detail():
+    """渲染单个视频详情页面"""
+    
+    st.title("📹 视频详情分析")
+    
+    # 选择视频
+    videos = get_videos()
+    
+    if not videos:
+        render_empty_state("暂无监控视频，请先添加视频", icon="📹")
+        return
+    
+    video_options = {f"{video[1]} ({video[0]})": video[0] for video in videos}
+    selected_video = st.selectbox("选择视频", list(video_options.keys()))
+    
+    video_id = video_options[selected_video]
+    
+    # 获取视频信息
+    video_info = get_video_info(video_id)
+    if not video_info:
+        render_error_box("视频信息不存在", "请先添加该视频")
+        return
+    
+    # 获取最新统计
+    latest_stats = get_latest_stats(video_id)
+    
+    # 渲染视频信息
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.image(video_info.get("thumbnail_url", ""), use_container_width=True)
+    
+    with col2:
+        st.subheader(video_info.get("title", ""))
+        
+        col_a, col_b, col_c, col_d = st.columns(4)
+        
+        with col_a:
+            st.metric("观看量", format_number(latest_stats.get("view_count", 0) if latest_stats else 0))
+        
+        with col_b:
+            st.metric("点赞量", format_number(latest_stats.get("like_count", 0) if latest_stats else 0))
+        
+        with col_c:
+            st.metric("评论量", format_number(latest_stats.get("comment_count", 0) if latest_stats else 0))
+        
+        with col_d:
+            # 计算互动率
+            engagement_rate = calculate_engagement_rate(
+                latest_stats.get("like_count", 0) if latest_stats else 0,
+                latest_stats.get("comment_count", 0) if latest_stats else 0,
+                latest_stats.get("view_count", 0) if latest_stats else 0
+            )
+            st.metric("互动率", format_percentage(engagement_rate))
+    
+    # 数据趋势图
+    render_separator("数据趋势")
+    
+    fig = create_performance_chart(video_id, days=30)
+    render_chart_container("过去 30 天数据趋势", fig)
+    
+    # 优化建议
+    render_separator("优化建议")
+    
+    suggestions = generate_optimization_suggestions(video_id)
+    
+    if suggestions:
+        for suggestion in suggestions:
+            if suggestion["type"] == "warning":
+                render_warning_box(suggestion["title"], suggestion["message"])
+            elif suggestion["type"] == "info":
+                render_info_box(suggestion["title"], suggestion["message"])
+            elif suggestion["type"] == "success":
+                render_success_box(suggestion["title"], suggestion["message"])
+    else:
+        render_info_box("无需优化", "当前视频表现良好，继续保持！")
+    
+    # 评论词云
+    render_separator("评论分析")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("评论词云")
+        wordcloud = generate_word_cloud(video_id)
+        
+        import matplotlib.pyplot as plt
+        
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.imshow(wordcloud, interpolation='bilinear')
+        ax.axis("off")
+        st.pyplot(fig)
+        plt.close()
+    
+    with col2:
+        st.subheader("情感分析")
+        sentiment = analyze_comment_sentiment(video_id)
+        
+        fig = go.Figure(data=[
+            go.Bar(name="正面", x=["正面"], y=[sentiment.get("positive", 0)]),
+            go.Bar(name="中性", x=["中性"], y=[sentiment.get("neutral", 0)]),
+            go.Bar(name="负面", x=["负面"], y=[sentiment.get("negative", 0)])
+        ])
+        
+        fig.update_layout(
+            barmode="stack",
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#ffffff")
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+
+
+# ==================== 爆款提醒页面 ====================
+
+def render_alerts():
+    """渲染爆款提醒页面"""
+    
+    st.title("🔥 爆款提醒")
+    
+    alerts = get_unread_alerts()
+    
+    if not alerts:
+        render_empty_state("暂无未读提醒", icon="🔔")
+    else:
+        for alert in alerts:
+            with st.container():
+                render_warning_box(
+                    f"视频: {truncate_text(alert[8], 40)}",
+                    f"{alert[3]}: 当前值 {alert[5]}, 阈值 {alert[4]}"
+                )
+                
+                if st.button(f"标记为已读", key=f"read_{alert[0]}"):
+                    mark_alert_as_read(alert[0])
+                    st.rerun()
+                
+                st.markdown("---")
+
+
+# ==================== SEO 分析页面 ====================
+
+def render_seo_analysis():
+    """渲染 SEO 分析页面"""
+    
+    st.title("🎯 SEO 优化分析")
+    
+    videos = get_videos()
+    
+    if not videos:
+        render_empty_state("暂无监控视频，请先添加视频", icon="📊")
+        return
+    
+    # 选择视频
+    video_options = {f"{video[1]} ({video[0]})": video[0] for video in videos}
+    selected_video = st.selectbox("选择视频", list(video_options.keys()))
+    
+    video_id = video_options[selected_video]
+    video_info = get_video_info(video_id)
+    
+    if not video_info:
+        return
+    
+    # 标题分析
+    render_section_title("标题分析")
+    
+    title = video_info.get("title", "")
+    title_length = len(title)
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("标题长度", f"{title_length} 字符")
+    
+    with col2:
+        optimal_range = "30-60"
+        status = "✅ 优秀" if 30 <= title_length <= 60 else "⚠️ 需优化" if title_length < 30 else "❌ 过长"
+        st.metric("最佳范围", optimal_range)
+    
+    with col3:
+        st.metric("状态", status)
+    
+    # 描述分析
+    render_section_title("描述分析")
+    
+    description = video_info.get("description", "")
+    desc_length = len(description)
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("描述长度", f"{desc_length} 字符")
+    
+    with col2:
+        optimal_range = "200-500"
+        status = "✅ 优秀" if 200 <= desc_length <= 500 else "⚠️ 需优化" if desc_length < 200 else "❌ 过长"
+        st.metric("最佳范围", optimal_range)
+    
+    with col3:
+        st.metric("状态", status)
+    
+    # 标签分析
+    render_separator("标签分析")
+    
+    tags_data = get_all_tags(limit=50)
+    
+    if tags_data:
+        tag_df = pd.DataFrame(tags_data, columns=["标签", "出现次数"])
+        st.dataframe(tag_df.head(20), use_container_width=True, hide_index=True)
+    else:
+        render_empty_state("暂无标签数据", icon="🏷️")
+
+
+# ==================== 其他分析页面占位符 ====================
+
+def render_duration_analysis():
+    """渲染时长分析页面"""
+    st.title("⏱️ 视频时长分析")
+    render_info_box("功能开发中", "此功能正在开发中，敬请期待！")
+
+def render_publish_time_analysis():
+    """渲染发布时间分析页面"""
+    st.title("🕐 发布时间分析")
+    render_info_box("功能开发中", "此功能正在开发中，敬请期待！")
+
+def render_tags_analysis():
+    """渲染标签分析页面"""
+    st.title("🏷️ 标签分析")
+    render_info_box("功能开发中", "此功能正在开发中，敬请期待！")
+
+def render_sentiment_analysis():
+    """渲染情感分析页面"""
+    st.title("😊 情感分析")
+    render_info_box("功能开发中", "此功能正在开发中，敬请期待！")
+
+def render_user_profile():
+    """渲染用户画像页面"""
+    st.title("👥 用户画像")
+    render_info_box("功能开发中", "此功能正在开发中，敬请期待！")
+
+def render_comment_analysis():
+    """渲染评论分析页面"""
+    st.title("💬 评论分析")
+    
+    videos = get_videos()
+    
+    if not videos:
+        render_empty_state("暂无监控视频，请先添加视频", icon="📊")
+        return
+    
+    # 选择视频
+    video_options = {f"{video[1]} ({video[0]})": video[0] for video in videos}
+    selected_video = st.selectbox("选择视频", list(video_options.keys()))
+    
+    video_id = video_options[selected_video]
+    
+    # 获取最活跃评论者
+    top_commenters = get_top_commenters(video_id, limit=10)
+    
+    if top_commenters:
+        commenter_df = pd.DataFrame(top_commenters)
+        st.subheader("最活跃评论者")
+        st.dataframe(commenter_df, use_container_width=True, hide_index=True)
+    
+    # 获取最多点赞的评论
+    most_liked = get_most_liked_comments(video_id, limit=10)
+    
+    if most_liked:
+        st.subheader("最多点赞的评论")
+        for i, comment in enumerate(most_liked, 1):
+            st.markdown(f"**{i}. {comment['author_name']}** ({comment['like_count']} 点赞)")
+            st.markdown(f">{comment['text'][:200]}...")
+            st.markdown("---")
+
+
+def render_api_settings():
+    """渲染 API 设置页面"""
+    st.title("🔑 API 配置")
+    
+    render_section_title("YouTube Data API", "配置您的 YouTube Data API 密钥")
+    
+    current_api_key = st.session_state.get("api_key", "")
+    
+    api_key_input = st.text_input(
+        "API 密钥",
+        value=current_api_key,
+        type="password",
+        help="从 Google Cloud Console 获取您的 YouTube Data API v3 密钥"
+    )
+    
+    if st.button("保存 API 密钥", type="primary"):
+        st.session_state.api_key = api_key_input
+        set_api_key(api_key_input)
+        render_success_box("保存成功", "API 密钥已更新")
+
+
+def render_data_source():
+    """渲染数据源管理页面"""
+    st.title("📊 数据源管理")
+    
+    render_info_box("数据源说明", "当前使用 SQLite 数据库存储数据，数据文件为 youtube_dashboard.db")
+    
+    st.markdown("---")
+    
+    render_section_title("数据库统计")
+    
+    videos = get_videos()
+    
+    if videos:
+        st.metric("监控视频数", len(videos))
+        
+        total_views = sum([video[4] or 0 for video in videos])
+        st.metric("总观看量", format_number(total_views))
+    else:
+        render_empty_state("暂无数据", icon="📊")
+
+
+def render_error_box(title, content):
+    """渲染错误框（临时函数，使用组件中的）"""
+    st.error(f"{title}: {content}")
+
+
+# 运行主函数
+if __name__ == "__main__":
     main()
