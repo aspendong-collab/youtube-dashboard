@@ -178,7 +178,7 @@ def render_chart_container(title, chart, description=None):
     </div>
     """, unsafe_allow_html=True)
     
-    st.plotly_chart(chart, width='stretch', theme="plotly_dark")
+    st.plotly_chart(chart, width='stretch')
 
 
 def render_section_title(title, description=None, icon=None):
