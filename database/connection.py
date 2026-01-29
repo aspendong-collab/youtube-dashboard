@@ -46,15 +46,9 @@ def init_database():
         CREATE TABLE IF NOT EXISTS videos (
             video_id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
-            channel_id TEXT,
             channel_title TEXT,
-            thumbnail_url TEXT,
-            published_at TEXT,
-            duration TEXT,
-            category_id TEXT,
-            tags TEXT,
-            description TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            is_active BOOLEAN DEFAULT 1
         )
         """)
         
@@ -63,71 +57,12 @@ def init_database():
         CREATE TABLE IF NOT EXISTS video_stats (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             video_id TEXT NOT NULL,
+            date TEXT,
             view_count INTEGER,
             like_count INTEGER,
             comment_count INTEGER,
-            favorite_count INTEGER,
-            recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (video_id) REFERENCES videos(video_id)
-        )
-        """)
-        
-        # 检查并修复 video_stats 表的 recorded_at 列
-        cursor.execute("PRAGMA table_info(video_stats)")
-        columns = [column[1] for column in cursor.fetchall()]
-        
-        # 如果存在 fetch_time 列，重命名为 recorded_at（如果需要）
-        if 'fetch_time' in columns and 'recorded_at' not in columns:
-            try:
-                # SQLite 不支持直接重命名列，需要重建表
-                cursor.execute("""
-                    CREATE TABLE video_stats_new (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        video_id TEXT NOT NULL,
-                        view_count INTEGER,
-                        like_count INTEGER,
-                        comment_count INTEGER,
-                        favorite_count INTEGER,
-                        recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (video_id) REFERENCES videos(video_id)
-                    )
-                """)
-                cursor.execute("""
-                    INSERT INTO video_stats_new (id, video_id, view_count, like_count, comment_count, favorite_count, recorded_at)
-                    SELECT id, video_id, view_count, like_count, comment_count, favorite_count, fetch_time
-                    FROM video_stats
-                """)
-                cursor.execute("DROP TABLE video_stats")
-                cursor.execute("ALTER TABLE video_stats_new RENAME TO video_stats")
-                conn.commit()
-            except Exception as e:
-                # 如果重建失败，忽略错误
-                pass
-        
-        # 创建评论表
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS comments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            video_id TEXT NOT NULL,
-            comment_id TEXT UNIQUE,
-            author_name TEXT,
-            author_channel_url TEXT,
-            like_count INTEGER,
-            text TEXT,
-            published_at TEXT,
-            updated_at TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (video_id) REFERENCES videos(video_id)
-        )
-        """)
-        
-        # 创建标签表
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS tags (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            video_id TEXT NOT NULL,
-            tag TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            engagement_rate REAL,
+            fetch_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (video_id) REFERENCES videos(video_id)
         )
         """)
@@ -159,7 +94,7 @@ def get_video_ids() -> List[str]:
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT video_id FROM videos ORDER BY published_at DESC")
+        cursor.execute("SELECT video_id FROM videos ORDER BY added_at DESC")
         rows = cursor.fetchall()
         return [row[0] for row in rows]
 
