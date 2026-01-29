@@ -208,7 +208,8 @@ def save_video_ids_to_github(video_ids):
 def load_videos_from_github():
     """从GitHub数据库加载视频列表"""
     try:
-        cursor = conn = get_connection()
+        conn = get_connection()
+        cursor = conn.cursor()
         cursor.execute('SELECT video_id, title, channel_title, added_at, is_active FROM videos ORDER BY added_at DESC')
         videos = [dict(row) for row in cursor.fetchall()]
         conn.close()
