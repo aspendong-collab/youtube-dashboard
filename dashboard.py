@@ -674,10 +674,19 @@ def render_video_detail_dashboard(conn):
             value=f"{latest['engagement_rate']:.2f}%"
         )
 
-    st.divider()
+       st.divider()
 
-    # 转换为 DataFrame
-    df_stats = pd.DataFrame(stats)
+    # 转换为 DataFrame（确保包含 date 列）
+    if not stats:
+        st.warning("⚠️ 暂无统计数据")
+        return
+
+    df_stats = pd.DataFrame([dict(row) for row in stats])
+    
+    # 检查是否有 date 列
+    if 'date' not in df_stats.columns:
+        st.error("❌ 数据格式错误：缺少 date 列")
+        return
 
     # 播放量趋势
     fig_views = px.line(
