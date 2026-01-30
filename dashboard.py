@@ -602,7 +602,7 @@ def render_video_detail():
         # 显示视频缩略图
         thumbnail_url = video_info.get("thumbnail_url")
         if thumbnail_url:
-            st.image(thumbnail_url, width="stretch")
+            st.image(thumbnail_url, use_column_width=True)
         else:
             st.info("📹 无缩略图", icon="📹")
     
