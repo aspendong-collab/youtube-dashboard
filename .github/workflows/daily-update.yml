@@ -41,4 +41,5 @@ jobs:
           git config --local user.name "GitHub Action"
           git add youtube_dashboard.db
           git commit -m "chore: 自动更新数据" || exit 0
-          git push
+          # 只推送数据库文件，不影响 requirements.txt
+          git push origin HEAD:main
