@@ -89,20 +89,44 @@ def main():
     # 渲染侧边栏
     current_page = render_sidebar()
     
+    # 添加调试模式（在侧边栏）
+    with st.sidebar.expander("🔧 调试模式", expanded=False):
+        st.write(f"当前页面: {current_page}")
+        st.write(f"API Key 已配置: {bool(st.session_state.api_key)}")
+        
+        # 测试数据库
+        try:
+            from database import get_videos
+            videos = get_videos()
+            st.write(f"视频数量: {len(videos)}")
+            
+            if videos:
+                st.write("最新视频:")
+                st.write(f"ID: {videos[0][0]}")
+                st.write(f"标题: {videos[0][1][:50]}...")
+        except Exception as e:
+            st.error(f"数据库错误: {e}")
+    
     # 应用全局样式
     st.write("YouTube Analytics Dashboard")
     
     # 根据当前页面路由（终极精简结构）
-    if current_page == "overview":
-        render_overview()
-    elif current_page == "video_management":
-        render_video_management()
-    elif current_page == "deep_analysis":
-        render_deep_analysis()
-    elif current_page == "settings":
-        render_settings()
-    else:
-        render_overview()
+    try:
+        if current_page == "overview":
+            render_overview()
+        elif current_page == "video_management":
+            render_video_management()
+        elif current_page == "deep_analysis":
+            render_deep_analysis()
+        elif current_page == "settings":
+            render_settings()
+        else:
+            render_overview()
+    except Exception as e:
+        st.error(f"页面渲染错误: {str(e)}")
+        import traceback
+        with st.expander("查看错误详情"):
+            st.code(traceback.format_exc())
 
 
 # ==================== 视频管理页面 ====================
@@ -987,10 +1011,18 @@ def render_overview():
     # 导航提示
     st.info("使用左侧导航栏切换页面", icon="🧭")
     
-    videos = get_videos()
+    try:
+        videos = get_videos()
+    except Exception as e:
+        st.error(f"获取视频列表失败: {e}")
+        import traceback
+        with st.expander("查看错误详情"):
+            st.code(traceback.format_exc())
+        return
     
     if not videos:
         st.warning("暂无监控视频，请先添加视频", icon="📊")
+        st.info("💡 提示：前往「视频管理」页面添加视频", icon="💡")
         return
     
     # 准备数据
